@@ -1,0 +1,60 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# kcp sharded envtest
+.kcp-*/
+.test/
+
+# IDE and editor files
+.idea/
+.vscode/
+.claude/
+.cursor/
+.run/
+CLAUDE.local.md
+.gocache/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.envrc
+.env.local
+.env.*.local
+.secret
+.taskenv
+
+# Log files
+*.log
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+.kcp/
+
+# Debug files
+debug
+*.prof
+
+# Task context (if using claude code delegation)
+task-context/
+cmd/release/release

@@ -1,0 +1,4 @@
+Dockerfile.cross
+
+# Kubeconfig might contain secrets
+*.kubeconfig
