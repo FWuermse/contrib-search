@@ -36,6 +36,10 @@ This option indexes preconfigured kcp resources into OpenSearch, enriching each 
 
 #### Indexing
 
+**Data source.** The indexer reads resources through the search **APIExport virtual workspace**, discovered via the `APIExportEndpointSlice`. The search operator owns the `search.platform-mesh.io` APIExport and watches each indexed type once across all bound workspaces via the kcp multicluster-provider. Per-field searchability is still provider-declared via `SearchConfig` (see ADR 001).
+
+**Document key.** Each resource maps to one document keyed by `(logicalCluster, identityHash, GR, namespace, name)`: `logicalCluster` is the resource's origin kcp cluster ID (from the `kcp.io/cluster` annotation), `identityHash` is the APIExport identity hash disambiguating same-GR types from different exports, `GR` is the GroupResource (also selecting the per-org `SearchIndex`), and `namespace`/`name` identify the object (cluster-scoped resources use a `_cluster` sentinel namespace). The key is stable across re-indexing and is reused by the finalizer to delete the document on resource removal.
+
 When a kcp resource is indexed into OpenSearch, the following additional data is stored alongside the resource content:
 
 - **Authorization Object**: Every APIResource in kcp has a corresponding object, created and maintained by the security operator. This object identifier is stored in the index to enable permission checks at query time.
@@ -45,7 +49,7 @@ When a kcp resource is indexed into OpenSearch, the following additional data is
 ```mermaid
 graph LR
     subgraph "Indexing Pipeline"
-        A[kcp Resource Event] --> B[Index Enricher]
+        A[Resource Event via APIExport Virtual Workspace] --> B[Index Enricher]
         B --> C{Resolve Object}
         C --> D[Object ID]
         C --> E[Parent Account]
@@ -139,7 +143,7 @@ Identical to Option 1, with one addition: the **Account identifier** (the kcp ac
 ```mermaid
 graph LR
     subgraph "Indexing Pipeline"
-        A[kcp Resource Event] --> B[Index Enricher]
+        A[Resource Event via APIExport Virtual Workspace] --> B[Index Enricher]
         B --> C{Resolve Metadata}
         C --> D[Object ID]
         C --> E[Account ID ← promoted filter field]
