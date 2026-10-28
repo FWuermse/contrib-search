@@ -2,7 +2,7 @@
 
 | Status  | Proposed   |
 |---------|------------|
-| Date    | 2026-05-14 |
+| Date    | 2026-10-28 |
 
 ## Context and Problem Statement
 
@@ -12,7 +12,20 @@ Users want to filter and sort accounts by how much of a resource type they hold 
 
 ## Decision
 
-When an `IndexableResource` reconciler processes a resource of a counted type, it resolves the account workspace that resource lives in, counts the resources of that type in that workspace, and writes the count onto that Account's document.
+The parent resource's `SearchConfig` (e.g. the Account `SearchConfig`) declares which child resource plurals to count via a new `countedChildResources` field. When an `IndexableResource` reconciler processes a resource whose plural appears in that list, it resolves the account workspace, counts the resources of that type there, and writes the count onto the parent Account's document.
+
+### Declaring which child types to count
+
+The `SearchConfig` for the parent resource (e.g. Account) gains one new optional field:
+
+```yaml
+spec:
+  countedChildResources:    # plurals of child resource types to aggregate
+    - bindings
+    - stores
+```
+
+The operator reads this field from the parent resource's `SearchConfig` when it sets up reconcilers for child types, so providers declare the desired counts in one place without touching child `SearchConfig`s.
 
 ### Where the count lives
 
@@ -28,7 +41,7 @@ Reusing `filterable_fields` means it is indexed as a facet with no new caller-fa
 
 ### Producing the count
 
-The account workspace is the one the reconciled resource lives in, resolved from the account linkage already computed for every document (`cluster_name` / `AccountInfo`). The operator counts the type in that single workspace (not the wildcard virtual workspace) and partial-updates `filterable_fields.resource_counts.<plural>`.
+When an `IndexableResource` reconciler processes a resource of a type listed in the parent's `countedChildResources`, it resolves the account workspace that resource lives in, counts the resources of that type in that workspace, and partial-updates the parent Account document.
 
 The count is recomputed on every reconcile of the type (deletes run in `Finalize`), so it is self-correcting — no `+1`/`-1` bookkeeping that can drift.
 
@@ -63,7 +76,7 @@ If the target Account document does not exist yet (indexed later, or incomplete 
 ## Consequences
 
 * Good: accounts become filterable/sortable by resource counts directly in OpenSearch, with no cross-document joins.
-* Good: produced by the existing reconcilers and account linkage — no new reconciler or provider contract.
+* Good: produced by the existing reconcilers.
 * Good: recomputation is self-correcting; the metadata-only `Limit: 1` read keeps cost constant per reconcile.
 * Bad: every reconcile of a counted resource adds a count read and an Account-document write, so high churn causes write amplification on the `accounts` index.
 * Bad: only resources the operator can see through the search APIExport virtual workspace are counted.
