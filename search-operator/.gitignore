@@ -1,4 +1,5 @@
 Dockerfile.cross
+.env
 
 # Kubeconfig might contain secrets
 *.kubeconfig
