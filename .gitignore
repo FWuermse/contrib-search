@@ -24,6 +24,7 @@ vendor/
 # IDE and editor files
 .idea/
 .vscode/
+.zed/
 .claude/
 .cursor/
 .run/
@@ -60,3 +61,7 @@ debug
 # Task context (if using claude code delegation)
 task-context/
 cmd/release/release
+
+# Local git config
+.gitconfig
+.gitmessage
