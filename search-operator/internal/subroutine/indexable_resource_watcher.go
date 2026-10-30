@@ -36,6 +36,7 @@ import (
 	"go.platform-mesh.io/search-operator/internal/opensearch"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -47,6 +48,8 @@ import (
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 	"sigs.k8s.io/yaml"
+
+	kcpapisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
 )
 
 // IndexableResourceWatcherSubroutine watches IndexableResource resources across workspaces
@@ -247,6 +250,8 @@ func (s *IndexableResourceWatcherSubroutine) Process(ctx context.Context, instan
 		Str("index", indexName).
 		Str("kind", resource.GetKind()).
 		Msg("indexed document")
+
+	s.updateParentResourceCounts(ctx, log, workspacePath, pluralResource, accountInfo, orgID)
 
 	return ctrl.Result{}, nil
 }
@@ -671,6 +676,9 @@ func (s *IndexableResourceWatcherSubroutine) Finalize(ctx context.Context, insta
 		Str("index", indexName).
 		Msg("deleted document from index")
 
+	accountInfo := s.getParentAccountInfo(ctx, log, resource, clusterID, resourceClusterID)
+	s.updateParentResourceCounts(ctx, log, workspacePath, pluralResource, accountInfo, orgID)
+
 	return ctrl.Result{}, nil
 }
 
@@ -702,4 +710,146 @@ func addParentPermissions(doc *opensearch.ResourceDocument, tuples []*openfgav1.
 
 		doc.AddPermission(tuple.User, tuple.Relation, tuple.Object)
 	}
+}
+
+// updateParentResourceCounts checks whether pluralResource is listed in the Account's SearchConfig
+// countedChildResources and, if so, recomputes and writes the count onto the Account document.
+// Errors are logged and swallowed — counts are best-effort and self-correcting on the next reconcile.
+func (s *IndexableResourceWatcherSubroutine) updateParentResourceCounts(
+	ctx context.Context,
+	log *logger.Logger,
+	workspacePath string,
+	pluralResource string,
+	accountInfo *pmcorev1alpha1.AccountInfo,
+	orgID string,
+) {
+	if accountInfo == nil || accountInfo.Spec.Account.Name == "" || accountInfo.Spec.Account.OriginClusterId == "" {
+		return
+	}
+
+	// Find the provider workspace via the APIBindings in the current workspace.
+	wsClient, err := buildWorkspaceScopedClient(s.rootCfg, s.mgr.GetLocalManager().GetScheme(), workspacePath)
+	if err != nil {
+		log.Debug().Err(err).Msg("updateParentResourceCounts: failed to build workspace client")
+		return
+	}
+	bindings := &kcpapisv1alpha1.APIBindingList{}
+	if err := wsClient.List(ctx, bindings); err != nil {
+		log.Debug().Err(err).Msg("updateParentResourceCounts: failed to list APIBindings")
+		return
+	}
+
+	// Search all provider workspaces for a SearchConfig whose countedChildResources includes pluralResource.
+	for _, b := range bindings.Items {
+		if b.Status.Phase != kcpapisv1alpha1.APIBindingPhaseBound {
+			continue
+		}
+		providerPath := b.Spec.Reference.Export.Path
+		providerClient, err := GetScopedClient(s.mgr.GetLocalManager().GetConfig(), s.mgr.GetLocalManager().GetScheme(), providerPath)
+		if err != nil {
+			continue
+		}
+
+		searchCfgList := &pmsearchv1alpha1.SearchConfigList{}
+		if err := providerClient.List(ctx, searchCfgList); err != nil {
+			log.Debug().Err(err).Msg("updateParentResourceCounts: failed to list SearchConfigs")
+			continue
+		}
+		for i := range searchCfgList.Items {
+			sc := &searchCfgList.Items[i]
+			found := false
+			for _, r := range sc.Spec.CountedChildResources {
+				if r == pluralResource {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+
+			// pluralResource is listed — count it in the account workspace and update the Account doc.
+			s.writeResourceCount(ctx, log, sc, pluralResource, accountInfo, orgID)
+			return
+		}
+	}
+}
+
+// writeResourceCount counts pluralResource in the account workspace and partial-updates the Account document.
+func (s *IndexableResourceWatcherSubroutine) writeResourceCount(
+	ctx context.Context,
+	log *logger.Logger,
+	parentSearchCfg *pmsearchv1alpha1.SearchConfig,
+	pluralResource string,
+	accountInfo *pmcorev1alpha1.AccountInfo,
+	orgID string,
+) {
+	accountClusterID := multicluster.ClusterName(accountInfo.Spec.Account.GeneratedClusterId)
+	accountWorkspacePath := accountInfo.Spec.Account.Path
+	if accountWorkspacePath == "" {
+		log.Debug().Str("account", accountInfo.Spec.Account.Name).Msg("writeResourceCount: AccountInfo has no Path, skipping")
+		return
+	}
+
+	wsClient, err := buildWorkspaceScopedClient(s.rootCfg, s.mgr.GetLocalManager().GetScheme(), accountWorkspacePath)
+	if err != nil {
+		log.Debug().Err(err).Msg("writeResourceCount: failed to build account workspace client")
+		return
+	}
+
+	// Resolve GVK for the plural via the account cluster's RESTMapper.
+	accountCluster, err := s.mgr.GetCluster(ctx, accountClusterID)
+	if err != nil {
+		log.Debug().Err(err).Msg("writeResourceCount: failed to get account cluster")
+		return
+	}
+	mappings, err := accountCluster.GetRESTMapper().ResourcesFor(schema.GroupVersionResource{Resource: pluralResource})
+	if err != nil || len(mappings) == 0 {
+		log.Debug().Err(err).Str("plural", pluralResource).Msg("writeResourceCount: failed to resolve GVK for plural")
+		return
+	}
+	restMapping, err := accountCluster.GetRESTMapper().RESTMapping(schema.GroupKind{Kind: mappings[0].Resource})
+	if err != nil {
+		log.Debug().Err(err).Str("plural", pluralResource).Msg("writeResourceCount: failed to get RESTMapping")
+		return
+	}
+	gvkForCount := restMapping.GroupVersionKind
+
+	list := &metav1.PartialObjectMetadataList{}
+	list.SetGroupVersionKind(gvkForCount)
+	if err := wsClient.List(ctx, list, ctrlruntimeclient.Limit(1)); err != nil {
+		log.Debug().Err(err).Str("plural", pluralResource).Msg("writeResourceCount: failed to list resources for count")
+		return
+	}
+	count := int64(len(list.Items))
+	if rem := list.GetRemainingItemCount(); rem != nil {
+		count += *rem
+	}
+
+	// Resolve the Account's SearchIndex to get its OpenSearch index name.
+	accountSearchIndex, err := getSearchIndex(ctx, s.orgsClient, orgID, strings.ToLower(pmsearchv1alpha1.AccountKind)+"s", s.indexPrefix)
+	if err != nil || accountSearchIndex.Status.IndexName == "" {
+		log.Debug().Err(err).Msg("writeResourceCount: Account SearchIndex not ready")
+		return
+	}
+
+	accountDocID := fmt.Sprintf("%s-_cluster-%s-%s", accountClusterID, pmsearchv1alpha1.AccountKind, accountInfo.Spec.Account.Name)
+	update := map[string]any{
+		"filterable_fields": map[string]any{
+			"resource_counts": map[string]any{
+				pluralResource: count,
+			},
+		},
+	}
+	if err := s.osClient.PartialUpdateDocument(ctx, accountSearchIndex.Status.IndexName, accountDocID, update); err != nil {
+		log.Debug().Err(err).Str("accountDoc", accountDocID).Str("plural", pluralResource).Msg("writeResourceCount: failed to update Account document")
+		return
+	}
+
+	log.Info().
+		Str("account", accountInfo.Spec.Account.Name).
+		Str("plural", pluralResource).
+		Int64("count", count).
+		Str("parentSearchConfig", parentSearchCfg.Name).
+		Msg("updated resource count on Account document")
 }

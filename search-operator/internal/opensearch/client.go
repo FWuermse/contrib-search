@@ -371,6 +371,30 @@ func (c *Client) IndexDocument(ctx context.Context, indexName, docID string, doc
 	return nil
 }
 
+// PartialUpdateDocument updates specific fields in an existing document using a script or doc partial.
+func (c *Client) PartialUpdateDocument(ctx context.Context, indexName, docID string, fields map[string]any) (err error) {
+	start := time.Now()
+	defer func() {
+		labelResult := "success"
+		if err != nil {
+			labelResult = "error"
+		}
+		metrics.OpenSearchOperationsTotal.WithLabelValues("partial_update_document", labelResult).Inc()
+		metrics.OpenSearchOperationDuration.WithLabelValues("partial_update_document").Observe(time.Since(start).Seconds())
+	}()
+
+	body := map[string]any{"doc": fields}
+	_, err = c.api.Update(ctx, opensearchapi.UpdateReq{
+		Index:      indexName,
+		DocumentID: docID,
+		Body:       opensearchutil.NewJSONReader(body),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to partial-update document %s in %s: %w", docID, indexName, err)
+	}
+	return nil
+}
+
 // DeleteDocument deletes a document
 func (c *Client) DeleteDocument(ctx context.Context, indexName, docID string) (err error) {
 	start := time.Now()

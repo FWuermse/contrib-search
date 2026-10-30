@@ -92,6 +92,14 @@ spec:
                 items:
                   type: string
                 type: array
+              countedChildResources:
+                description: |-
+                  CountedChildResources lists the resource plurals whose per-workspace counts are
+                  denormalized onto this resource's document under filterable_fields.resource_counts.
+                  Only meaningful on the SearchConfig for a parent resource (e.g. Account).
+                items:
+                  type: string
+                type: array
             required:
             - apiResourceSchemaRef
             type: object

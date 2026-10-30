@@ -13,7 +13,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	go.platform-mesh.io/apis v0.1.0
-	go.platform-mesh.io/golang-commons v0.18.1
+	go.platform-mesh.io/golang-commons v0.19.0
 	k8s.io/apiextensions-apiserver v0.36.3
 	k8s.io/apimachinery v0.36.3
 	k8s.io/client-go v0.36.3
@@ -23,6 +23,8 @@ require (
 )
 
 replace github.com/kcp-dev/multicluster-provider/client => github.com/kcp-dev/multicluster-provider/client v0.8.1-0.20260714141811-833f063357f8
+
+replace go.platform-mesh.io/apis => ../../platform-mesh/apis
 
 require (
 	github.com/99designs/gqlgen v0.17.91 // indirect
@@ -87,7 +89,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
-	go.platform-mesh.io/subroutines v0.6.1 // indirect
+	go.platform-mesh.io/subroutines v0.7.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/net v0.60.0 // indirect
