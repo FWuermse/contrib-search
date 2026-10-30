@@ -251,7 +251,7 @@ func (s *IndexableResourceWatcherSubroutine) Process(ctx context.Context, instan
 		Str("kind", resource.GetKind()).
 		Msg("indexed document")
 
-	s.updateParentResourceCounts(ctx, log, workspacePath, pluralResource, accountInfo, orgID)
+	s.updateParentResourceCounts(ctx, log, workspacePath, pluralResource, gvk, accountInfo, orgID)
 
 	return ctrl.Result{}, nil
 }
@@ -677,7 +677,7 @@ func (s *IndexableResourceWatcherSubroutine) Finalize(ctx context.Context, insta
 		Msg("deleted document from index")
 
 	accountInfo := s.getParentAccountInfo(ctx, log, resource, clusterID, resourceClusterID)
-	s.updateParentResourceCounts(ctx, log, workspacePath, pluralResource, accountInfo, orgID)
+	s.updateParentResourceCounts(ctx, log, workspacePath, pluralResource, resource.GroupVersionKind(), accountInfo, orgID)
 
 	return ctrl.Result{}, nil
 }
@@ -720,6 +720,7 @@ func (s *IndexableResourceWatcherSubroutine) updateParentResourceCounts(
 	log *logger.Logger,
 	workspacePath string,
 	pluralResource string,
+	gvk schema.GroupVersionKind,
 	accountInfo *pmcorev1alpha1.AccountInfo,
 	orgID string,
 ) {
@@ -769,7 +770,7 @@ func (s *IndexableResourceWatcherSubroutine) updateParentResourceCounts(
 			}
 
 			// pluralResource is listed — count it in the account workspace and update the Account doc.
-			s.writeResourceCount(ctx, log, sc, pluralResource, accountInfo, orgID)
+			s.writeResourceCount(ctx, log, sc, pluralResource, gvk, accountInfo, orgID)
 			return
 		}
 	}
@@ -781,6 +782,7 @@ func (s *IndexableResourceWatcherSubroutine) writeResourceCount(
 	log *logger.Logger,
 	parentSearchCfg *pmsearchv1alpha1.SearchConfig,
 	pluralResource string,
+	gvk schema.GroupVersionKind,
 	accountInfo *pmcorev1alpha1.AccountInfo,
 	orgID string,
 ) {
@@ -797,26 +799,8 @@ func (s *IndexableResourceWatcherSubroutine) writeResourceCount(
 		return
 	}
 
-	// Resolve GVK for the plural via the account cluster's RESTMapper.
-	accountCluster, err := s.mgr.GetCluster(ctx, accountClusterID)
-	if err != nil {
-		log.Debug().Err(err).Msg("writeResourceCount: failed to get account cluster")
-		return
-	}
-	mappings, err := accountCluster.GetRESTMapper().ResourcesFor(schema.GroupVersionResource{Resource: pluralResource})
-	if err != nil || len(mappings) == 0 {
-		log.Debug().Err(err).Str("plural", pluralResource).Msg("writeResourceCount: failed to resolve GVK for plural")
-		return
-	}
-	restMapping, err := accountCluster.GetRESTMapper().RESTMapping(schema.GroupKind{Kind: mappings[0].Resource})
-	if err != nil {
-		log.Debug().Err(err).Str("plural", pluralResource).Msg("writeResourceCount: failed to get RESTMapping")
-		return
-	}
-	gvkForCount := restMapping.GroupVersionKind
-
 	list := &metav1.PartialObjectMetadataList{}
-	list.SetGroupVersionKind(gvkForCount)
+	list.SetGroupVersionKind(gvk)
 	if err := wsClient.List(ctx, list, ctrlruntimeclient.Limit(1)); err != nil {
 		log.Debug().Err(err).Str("plural", pluralResource).Msg("writeResourceCount: failed to list resources for count")
 		return
