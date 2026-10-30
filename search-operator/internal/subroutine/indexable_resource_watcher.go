@@ -26,12 +26,12 @@ import (
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
 
 	pmcorev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
-	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
 	"go.platform-mesh.io/golang-commons/controller/lifecycle/runtimeobject"
 	lifecyclesubroutine "go.platform-mesh.io/golang-commons/controller/lifecycle/subroutine"
 	"go.platform-mesh.io/golang-commons/errors"
 	fgamodel "go.platform-mesh.io/golang-commons/fga/model"
 	"go.platform-mesh.io/golang-commons/logger"
+	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
 	"go.platform-mesh.io/search-operator/internal/metrics"
 	"go.platform-mesh.io/search-operator/internal/opensearch"
 
@@ -799,6 +799,8 @@ func (s *IndexableResourceWatcherSubroutine) writeResourceCount(
 		return
 	}
 
+	// Listing all child resources could become expensive with many child resources under a parent resource at O(n).
+	// Kubernetes has no count API directly but gives a remaining count when querying with `PartialObjectMetadata`.
 	list := &metav1.PartialObjectMetadataList{}
 	list.SetGroupVersionKind(gvk)
 	if err := wsClient.List(ctx, list, ctrlruntimeclient.Limit(1)); err != nil {
