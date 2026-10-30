@@ -786,7 +786,7 @@ func (s *IndexableResourceWatcherSubroutine) writeResourceCount(
 	accountInfo *pmcorev1alpha1.AccountInfo,
 	orgID string,
 ) {
-	accountClusterID := multicluster.ClusterName(accountInfo.Spec.Account.GeneratedClusterId)
+	accountClusterID := multicluster.ClusterName(accountInfo.Spec.Account.OriginClusterId)
 	accountWorkspacePath := accountInfo.Spec.Account.Path
 	if accountWorkspacePath == "" {
 		log.Debug().Str("account", accountInfo.Spec.Account.Name).Msg("writeResourceCount: AccountInfo has no Path, skipping")
