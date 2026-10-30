@@ -42,6 +42,8 @@ CLAUDE.local.md
 .env.*.local
 .secret
 .taskenv
+.gitmessage
+.gitconfig
 
 # Log files
 *.log
