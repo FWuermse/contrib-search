@@ -22,10 +22,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0
 )
 
-replace github.com/kcp-dev/multicluster-provider/client => github.com/kcp-dev/multicluster-provider/client v0.8.1-0.20260714141811-833f063357f8
-
-replace go.platform-mesh.io/apis => ../../platform-mesh/apis
-
 require (
 	github.com/99designs/gqlgen v0.17.91 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect

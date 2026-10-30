@@ -19,7 +19,7 @@ package controller
 import (
 	"context"
 
-	pmsearchv1alpha1 "go.platform-mesh.io/apis/search/v1alpha1"
+	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
 	"go.platform-mesh.io/golang-commons/controller/lifecycle/builder"
 	"go.platform-mesh.io/golang-commons/controller/lifecycle/multicluster"
 	lifecyclesubroutine "go.platform-mesh.io/golang-commons/controller/lifecycle/subroutine"

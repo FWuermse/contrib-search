@@ -23,7 +23,7 @@ import (
 	"time"
 
 	pmcorev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
-	pmsearchv1alpha1 "go.platform-mesh.io/apis/search/v1alpha1"
+	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
 	"go.platform-mesh.io/search-operator/internal/opensearch"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

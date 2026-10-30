@@ -26,7 +26,7 @@ import (
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
 
 	pmcorev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
-	pmsearchv1alpha1 "go.platform-mesh.io/apis/search/v1alpha1"
+	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
 	"go.platform-mesh.io/golang-commons/controller/lifecycle/runtimeobject"
 	lifecyclesubroutine "go.platform-mesh.io/golang-commons/controller/lifecycle/subroutine"
 	"go.platform-mesh.io/golang-commons/errors"
