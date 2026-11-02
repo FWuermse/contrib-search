@@ -15,41 +15,19 @@
 # Build the manager binary.
 #
 # NOTE: the build context is the repository ROOT, not this directory.
-# The operator module is linked to the shared in-repo modules through the
-# repository-root go.work file and the go.mod replace directives, so the
-# workspace and those module sources must be present in the build:
-#   docker build -f operators/search-operator/Dockerfile .
+#   docker build -f search-operator/Dockerfile .
 FROM --platform=$BUILDPLATFORM golang:1.26.7@sha256:dc2521c2a906db43073b8b4d99f491b6341cf15610b6ebbab187c45153f9959e AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
 WORKDIR /workspace
 
-# Go workspace + the modules this image needs.
-COPY go.work go.work
-COPY go.work.sum go.work.sum
-COPY apis/ apis/
-COPY golang-commons/ golang-commons/
-COPY subroutines/ subroutines/
-COPY operators/search-operator/ operators/search-operator/
+COPY search-operator/ search-operator/
 
-# Drop every workspace module except the ones copied above, so the workspace
-# resolves with only the modules copied above — regardless of what else go.work lists
-# (other operators, cmd/* tools, ...). This is a textual edit of go.work, so the
-# dropped modules don't need to exist in the build context.
-RUN for m in $(go work edit -json | sed -n 's/.*"DiskPath": "\(.*\)".*/\1/p'); do \
-      case "$m" in \
-        ./apis|./golang-commons|./subroutines|./operators/search-operator) ;; \
-        *) go work edit -dropuse "$m" ;; \
-      esac; \
-    done
+WORKDIR /workspace/search-operator
 
-WORKDIR /workspace/operators/search-operator
-
-# cache deps before building so that source changes don't invalidate the layer
 RUN go mod download
 
-# Build
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -ldflags '-w -s' -o /workspace/manager main.go
 
 FROM scratch

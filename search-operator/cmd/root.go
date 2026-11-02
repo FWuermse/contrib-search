@@ -20,9 +20,9 @@ import (
 	"github.com/spf13/cobra"
 
 	pmcorev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
-	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
 	platformmeshcontext "go.platform-mesh.io/golang-commons/config"
 	"go.platform-mesh.io/golang-commons/logger"
+	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
 	"go.platform-mesh.io/search-operator/internal/config"
 
 	"k8s.io/apimachinery/pkg/runtime"
