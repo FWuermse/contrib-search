@@ -1,5 +1,5 @@
 image:
-  name: ghcr.io/platform-mesh/platform-mesh/search-operator
+  name: ghcr.io/platform-mesh/search-operator
   tag: latest
 
 # -- environment indicator, used for logging and observability

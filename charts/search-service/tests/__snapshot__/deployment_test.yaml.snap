@@ -77,7 +77,7 @@ service matches the snapshot:
                     secretKeyRef:
                       key: password
                       name: opensearch-admin-auth
-              image: ghcr.io/platform-mesh/platform-mesh/search-service:latest
+              image: ghcr.io/platform-mesh/search-service:latest
               imagePullPolicy: Always
               livenessProbe:
                 failureThreshold: 3

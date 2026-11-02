@@ -62,6 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       images: ${{ steps.c.outputs.images }}
+      owner: ${{ steps.c.outputs.owner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -74,6 +75,7 @@ jobs:
           images="$(yq -o=json -I=0 '[.components | to_entries | .[] | select(.value.image != null) | {"component": .key, "image": .value.image}]' ocm/components.yaml)"
           [ "$images" != "[]" ] && [ -n "$images" ] || { echo "::error::no image components found in ocm/components.yaml"; exit 1; }
           echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
           echo "$images" | jq -r '.[] | "- \(.component) (image \(.image))"'
 
   # ──────────────────────────────────────────────
@@ -92,7 +94,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.components.outputs.images) }}
     env:
-      IMAGE: ghcr.io/${{ github.repository_owner }}/platform-mesh/${{ matrix.image }}
+      IMAGE: ghcr.io/${{ needs.components.outputs.owner }}/${{ matrix.image }}
       VERSION: ${{ inputs.version }}
     steps:
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
@@ -117,7 +119,7 @@ jobs:
           set -euo pipefail
           task images-${COMPONENT} \
             VERSION=v${VERSION} \
-            REPO=${GITHUB_REPOSITORY_OWNER}/platform-mesh \
+            REPO=${GITHUB_REPOSITORY_OWNER,,} \
             PLATFORMS=linux/amd64,linux/arm64 \
             PUSH=true \
             METADATA_FILE="${RUNNER_TEMP}/metadata.json"
@@ -196,6 +198,7 @@ jobs:
       - name: Install helm (pinned in tools/Taskfile.yaml)
         run: |
           echo "HELM=$(UGET_PRINT_PATH=absolute task tools:helm)" >> "$GITHUB_ENV"
+          echo "OCM_REPO=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
       - name: Registry credentials
         run: |
           set -euo pipefail
@@ -245,7 +248,7 @@ jobs:
       packages: read
       security-events: write
     with:
-      imageRef: ghcr.io/${{ github.repository_owner }}/platform-mesh/${{ matrix.image }}:v${{ inputs.version }}
+      imageRef: ghcr.io/${{ needs.components.outputs.owner }}/${{ matrix.image }}:v${{ inputs.version }}
 
   trivy-sbom:
     needs: [components, image]

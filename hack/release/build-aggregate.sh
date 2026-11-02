@@ -43,7 +43,7 @@
 #   --image-version V   version of the images built from this repository
 #                       (default: --version; their image tag is v<V>). Lets a
 #                       working-tree build reuse the images of a release.
-#   --component NAME    aggregate component name (default github.com/platform-mesh/platform-mesh)
+#   --component NAME    aggregate component name (default github.com/platform-mesh/search)
 #   --ocm-repo REPO     OCM repository to publish to and resolve references from
 #                       (default ghcr.io/platform-mesh)
 #   --chart-repo REPO   OCI repository charts are pushed to, without oci://
