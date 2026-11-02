@@ -1,0 +1,50 @@
+image:
+  name: ghcr.io/platform-mesh/platform-mesh/search-operator
+  tag: latest
+
+# -- environment indicator, used for logging and observability
+environment: local
+# -- region indicator, used for logging and observability
+region: local
+
+deployment:
+  revisionHistoryLimit: 3
+  resources:
+    limits:
+      cpu: 260m
+      memory: 512Mi
+    requests:
+      cpu: 150m
+      memory: 128Mi
+
+logLevel: info
+
+# -- The kubeconfig secret for the operator
+kubeconfigSecret: ""
+
+# OpenSearch connection configuration
+opensearch:
+  # -- OpenSearch service URL
+  url: "http://opensearch-cluster-master.platform-mesh-system.svc.cluster.local:9200"
+  # -- OpenSearch username (optional, for authenticated clusters)
+  username: ""
+  # -- OpenSearch password secret name (optional)
+  passwordSecretName: ""
+  # -- Key in the password secret
+  passwordSecretKey: "password"
+  # -- Skip TLS verification for OpenSearch connections
+  insecure: false
+  # -- OpenSearch ML model ID used for semantic field mappings
+  semanticModelId: ""
+  # -- Static prefix for all operator-managed OpenSearch index names and aliases
+  indexNamePrefix: ""
+
+# -- Comma-separated list of searchable resources in {group,version,kind,provider} format
+searchableResources: ""
+
+# -- Name of the APIExport EndpointSlice
+apiExportEndpointSliceName: search.platform-mesh.io
+
+# -- Enable hostAliases for in-cluster DNS resolution (needed for kind/local setups)
+hostAliases:
+  enabled: false

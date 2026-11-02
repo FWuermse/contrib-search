@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.entity.name" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  revisionHistoryLimit: {{ .Values.deployment.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "common.labelMatcher" . | indent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.labelMatcher" . | indent 8 }}
+        control-plane: controller-manager
+    spec:
+      {{- include "common.imagePullSecret" . | indent 6 }}
+      {{- include "common.pod.securityContext" . | indent 6 }}
+      terminationGracePeriodSeconds: {{ include "common.terminationGracePeriodSeconds" .}}
+{{ include "common.hostAliases" $ | nindent 6 }}
+      containers:
+      - {{- include "common.podBasics" . | indent 8 }}
+        {{- include "common.container.securityContext" . | indent 8 }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          failureThreshold: 1
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          failureThreshold: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        args:
+          - operator
+          - --health-probe-bind-address=:8081
+          - --api-export-endpoint-slice-name={{ .Values.apiExportEndpointSliceName }}
+          {{- if .Values.kubeconfigSecret }}
+          - --kcp-kubeconfig=/api-kubeconfig/kubeconfig
+          {{- end }}
+          - --opensearch-url={{ .Values.opensearch.url }}
+          {{- if .Values.opensearch.username }}
+          - --opensearch-username={{ .Values.opensearch.username }}
+          {{- end }}
+          {{- if .Values.opensearch.passwordSecretName }}
+          - --opensearch-password=$(OPENSEARCH_PASSWORD)
+          {{- end }}
+          {{- if .Values.opensearch.insecure }}
+          - --opensearch-insecure={{ .Values.opensearch.insecure }}
+          {{- end }}
+          {{- if .Values.opensearch.semanticModelId }}
+          - --opensearch-semantic-model-id={{ .Values.opensearch.semanticModelId }}
+          {{- end }}
+          {{- if .Values.opensearch.indexNamePrefix }}
+          - --opensearch-index-name-prefix={{ .Values.opensearch.indexNamePrefix }}
+          {{- end }}
+          {{- if .Values.searchableResources }}
+          - --searchable-resources={{ .Values.searchableResources }}
+          {{- end }}
+        ports:
+          - name: health-port
+            containerPort: 8081
+            protocol: TCP
+        env:
+        {{- include "common.basicEnvironment" . | nindent 10 }}
+          {{- if .Values.opensearch.passwordSecretName }}
+          - name: OPENSEARCH_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.opensearch.passwordSecretName }}
+                key: {{ .Values.opensearch.passwordSecretKey }}
+          {{- end }}
+        volumeMounts:
+          {{- if .Values.kubeconfigSecret }}
+          - name: external-api-server
+            mountPath: /api-kubeconfig
+          {{- end }}
+          {{- include "common.extraVolumeMounts" . | nindent 10 }}
+      volumes:
+        {{- if .Values.kubeconfigSecret }}
+        - name: external-api-server
+          secret:
+            secretName: {{ .Values.kubeconfigSecret }}
+        {{- end }}
+        {{- include "common.extraVolumes" . | nindent 8 }}

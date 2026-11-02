@@ -1,0 +1,38 @@
+# Copyright The Platform Mesh Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Template for the contrib-search OCM component graph. hack/release/build-aggregate.sh
+# fills in the ${VARIABLES} (VERSION/COMPONENT_NAME/REPO_URL/COMMIT) and appends
+# the generated per-chart components (see ocm/charts/README.md).
+
+components:
+  - name: ${COMPONENT_NAME}
+    version: ${VERSION}
+    provider:
+      name: The Platform Mesh Team
+    sources:
+      - name: source
+        type: git
+        version: ${VERSION}
+        access:
+          type: gitHub
+          repoUrl: ${REPO_URL}
+          commit: ${COMMIT}
+    componentReferences:
+      - name: search-operator
+        componentName: github.com/platform-mesh/search-operator
+        version: ${VERSION}
+      - name: search-service
+        componentName: github.com/platform-mesh/search-service
+        version: ${VERSION}

@@ -1,0 +1,9 @@
+suite: httproute
+templates:
+  - templates/httproute.yaml
+values:
+  - ../test-values.yaml
+tests:
+  - it: renders the HTTPRoute with default baseDomain
+    asserts:
+      - matchSnapshot: {}

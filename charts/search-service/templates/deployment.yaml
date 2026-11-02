@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "common.entity.name" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.deployment.replicas }}
+  revisionHistoryLimit: {{ .Values.deployment.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "common.labelMatcher" . | indent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "common.labelMatcher" . | indent 8 }}
+        service: {{ include "common.entity.name" . }}
+    spec:
+      {{- include "common.imagePullSecret" . | indent 6 }}
+      {{- include "common.pod.securityContext" . | indent 6 }}
+      terminationGracePeriodSeconds: {{ include "common.terminationGracePeriodSeconds" .}}
+{{ include "common.hostAliases" $ | nindent 6 }}
+      containers:
+      - {{- include "common.podBasics" . | indent 8 }}
+        {{- include "common.container.securityContext" . | indent 8 }}
+        args:
+          - serve
+          - --port={{ .Values.service.port }}
+          - --log-level={{ .Values.logLevel }}
+          {{- if .Values.kubeconfigSecret }}
+          - --kubeconfig=/api-kubeconfig/kubeconfig
+          {{- end }}
+          - --is-local={{ .Values.localDevelopment.enabled }}
+          - --local-development-org={{ .Values.localDevelopment.organization }}
+          - --opensearch-url={{ .Values.opensearch.url }}
+          - --opensearch-insecure={{ .Values.opensearch.insecure }}
+          - --opensearch-timeout={{ .Values.opensearch.timeout }}
+          - --openfga-grpc-addr={{ .Values.openfga.grpcAddr }}
+          - --searchindex-workspace-path={{ .Values.searchIndex.workspacePath }}
+          - --searchindex-org-workspace-path={{ .Values.searchIndex.orgWorkspacePath }}
+          - --searchindex-token-review-workspace-path={{ .Values.searchIndex.tokenReviewWorkspacePath }}
+          - --searchindex-group={{ .Values.searchIndex.group }}
+          - --searchindex-version={{ .Values.searchIndex.version }}
+          - --searchindex-resource={{ .Values.searchIndex.resource }}
+          - --search-default-limit={{ .Values.search.defaultLimit }}
+          - --search-max-limit={{ .Values.search.maxLimit }}
+          - --search-fetch-batch-size={{ .Values.search.fetchBatchSize }}
+          - --search-max-scanned-hits={{ .Values.search.maxScannedHits }}
+        ports:
+          - name: http
+            containerPort: {{ .Values.service.port }}
+            protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          failureThreshold: 3
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          failureThreshold: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        env:
+        {{- include "common.basicEnvironment" . | nindent 10 }}
+          {{- if .Values.kubeconfigSecret }}
+          - name: KCP_KUBECONFIG
+            value: /api-kubeconfig/kubeconfig
+          {{- end }}
+          - name: OPENSEARCH_URL
+            value: {{ .Values.opensearch.url }}
+          {{- if .Values.opensearch.username }}
+          - name: OPENSEARCH_USERNAME
+            value: {{ .Values.opensearch.username }}
+          {{- end }}
+          {{- if .Values.opensearch.passwordSecretName }}
+          - name: OPENSEARCH_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ .Values.opensearch.passwordSecretName }}
+                key: {{ .Values.opensearch.passwordSecretKey }}
+          {{- end }}
+        {{- if or .Values.kubeconfigSecret .Values.extraVolumeMounts }}
+        volumeMounts:
+          {{- if .Values.kubeconfigSecret }}
+          - name: external-api-server
+            mountPath: /api-kubeconfig
+          {{- end }}
+          {{- include "common.extraVolumeMounts" . | nindent 10 }}
+        {{- end }}
+      {{- if or .Values.kubeconfigSecret .Values.extraVolumes }}
+      volumes:
+        {{- if .Values.kubeconfigSecret }}
+        - name: external-api-server
+          secret:
+            secretName: {{ .Values.kubeconfigSecret }}
+        {{- end }}
+        {{- include "common.extraVolumes" . | nindent 8 }}
+      {{- end }}

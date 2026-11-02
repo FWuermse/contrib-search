@@ -1,0 +1,7 @@
+suite: service
+values:
+  - ../test-values.yaml
+tests:
+  - it: service matches the snapshot
+    asserts:
+      - matchSnapshot: {}

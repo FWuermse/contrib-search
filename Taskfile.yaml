@@ -1,0 +1,140 @@
+# Copyright The Platform Mesh Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: "3"
+
+# Root Taskfile for the contrib-search repository.
+#
+# Per-component targets (`verify-<name>`, `test-<name>`, `images-<name>`) fan
+# out to each component's own Taskfile. Add a component by listing its name
+# in COMPONENTS below (its directory must contain a Taskfile.yaml).
+
+includes:
+  tools:
+    taskfile: tools/Taskfile.yaml
+    dir: .
+
+vars:
+  COMPONENTS:
+    - search-operator
+    - search-service
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  lint:
+    desc: Lint every component.
+    cmds:
+      - for: {var: COMPONENTS}
+        cmd: task verify-{{.ITEM}}
+
+  test:
+    desc: Test every component.
+    cmds:
+      - for: {var: COMPONENTS}
+        cmd: task test-{{.ITEM}}
+
+  # ---------------------------------------------------------------------------
+  # Per-component targets, used by CI workflows and locally.
+  # ---------------------------------------------------------------------------
+  "verify-*":
+    desc: "Lint one component (e.g. task verify-search-operator)."
+    cmds:
+      - task: _run
+        vars:
+          COMPONENT: "{{index .MATCH 0}}"
+          TARGET: lint
+
+  "test-*":
+    desc: "Test one component (e.g. task test-search-operator)."
+    cmds:
+      - task: _run
+        vars:
+          COMPONENT: "{{index .MATCH 0}}"
+          TARGET: test
+
+  "images-*":
+    desc: "Build (and optionally push) one component's image (e.g. task images-search-operator VERSION=v0.1.0 PUSH=true)."
+    vars:
+      REGISTRY: '{{.REGISTRY | default "ghcr.io"}}'
+      REPO: '{{.REPO | default "platform-mesh/platform-mesh"}}'
+      VERSION: '{{.VERSION | default "dev"}}'
+      PUSH: '{{.PUSH | default "false"}}'
+      PLATFORMS: '{{.PLATFORMS | default "linux/amd64"}}'
+      METADATA_FILE: '{{.METADATA_FILE | default ""}}'
+    cmds:
+      - task: _image
+        vars:
+          COMPONENT: "{{index .MATCH 0}}"
+          REGISTRY: "{{.REGISTRY}}"
+          REPO: "{{.REPO}}"
+          VERSION: "{{.VERSION}}"
+          PUSH: "{{.PUSH}}"
+          PLATFORMS: "{{.PLATFORMS}}"
+          METADATA_FILE: "{{.METADATA_FILE}}"
+
+  _run:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        comp='{{.COMPONENT}}'; target='{{.TARGET}}'
+        dir=''
+        for p in "$comp" "operators/$comp" "services/$comp"; do
+          if [ -f "$p/Taskfile.yaml" ] || [ -f "$p/Taskfile.yml" ]; then dir="$p"; break; fi
+        done
+        if [ -z "$dir" ]; then
+          echo "unknown component '$comp' (no Taskfile under ./, ./operators/ or ./services/)" >&2
+          exit 1
+        fi
+        task --dir "$dir" "$target"
+
+  _image:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        set -eu
+        comp='{{.COMPONENT}}'
+        dir=''
+        for p in "$comp" "operators/$comp" "services/$comp"; do
+          if [ -d "$p" ]; then dir="$p"; break; fi
+        done
+        if [ -z "$dir" ]; then
+          echo "unknown component '$comp' (no directory found)" >&2
+          exit 1
+        fi
+        if [ ! -f "$dir/Dockerfile" ]; then
+          echo ">> $comp: no Dockerfile in $dir — skipping image build"
+          exit 0
+        fi
+
+        version='{{.VERSION}}'
+        image='{{.REGISTRY}}/{{.REPO}}'/"$comp"
+        push_flag='--load'
+        [ '{{.PUSH}}' = 'true' ] && push_flag='--push'
+
+        set -- -t "$image:$version"
+        meta='{{.METADATA_FILE}}'
+        [ -n "$meta" ] && set -- "$@" --metadata-file "$meta"
+
+        echo ">> building $image:$version (platforms={{.PLATFORMS}} push={{.PUSH}})"
+        docker buildx build \
+          --file "$dir/Dockerfile" \
+          --platform '{{.PLATFORMS}}' \
+          "$push_flag" \
+          "$@" \
+          .

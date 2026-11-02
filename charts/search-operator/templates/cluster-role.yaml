@@ -1,0 +1,84 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "common.entity.name" . }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apis.kcp.io
+    resources:
+      - apibindings
+      - apiexports
+      - apiresourceschemas
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - core.kcp.io
+    resources:
+      - logicalclusters
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - core.platform-mesh.io
+    resources:
+      - accountinfos
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - tenancy.kcp.io
+    resources:
+      - workspaces
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - core.platform-mesh.io
+    resources:
+      - searchindexes
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - core.platform-mesh.io
+    resources:
+      - searchindexes/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - core.platform-mesh.io
+    resources:
+      - searchindexes/status
+    verbs:
+      - get
+      - patch
+      - update

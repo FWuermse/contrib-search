@@ -1,0 +1,24 @@
+renders the HTTPRoute with default baseDomain:
+  1: |
+    apiVersion: gateway.networking.k8s.io/v1
+    kind: HTTPRoute
+    metadata:
+      name: RELEASE-NAME-search-service
+      namespace: NAMESPACE
+    spec:
+      hostnames:
+        - portal.localhost
+        - '*.portal.localhost'
+      parentRefs:
+        - name: k8sapi-gateway
+      rules:
+        - backendRefs:
+            - group: ""
+              kind: Service
+              name: RELEASE-NAME-search-service
+              namespace: NAMESPACE
+              port: 8080
+          matches:
+            - path:
+                type: PathPrefix
+                value: /rest/v1/search

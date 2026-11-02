@@ -1,0 +1,69 @@
+image:
+  name: ghcr.io/platform-mesh/platform-mesh/search-service
+  tag: latest
+
+imagePullPolicy: Always
+
+# -- environment indicator, used for logging and observability
+environment: local
+# -- region indicator, used for logging and observability
+region: local
+
+deployment:
+  revisionHistoryLimit: 3
+  replicas: 1
+  resources:
+    limits:
+      cpu: 260m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+logLevel: info
+
+service:
+  port: 8080
+
+# -- The kubeconfig secret for KCP access.
+kubeconfigSecret: ""
+
+localDevelopment:
+  enabled: false
+  organization: local
+
+opensearch:
+  # -- OpenSearch service URL
+  url: "http://opensearch-cluster-master.platform-mesh-system.svc.cluster.local:9200"
+  # -- OpenSearch username (optional, for authenticated clusters)
+  username: "admin"
+  # -- OpenSearch password secret name (optional)
+  passwordSecretName: ""
+  # -- Key in the password secret
+  passwordSecretKey: "password"
+  # -- Skip TLS verification for OpenSearch connections
+  insecure: true
+  # -- OpenSearch HTTP timeout
+  timeout: 10s
+
+openfga:
+  grpcAddr: "openfga.platform-mesh-system.svc.cluster.local:8081"
+
+searchIndex:
+  workspacePath: "root:providers:search"
+  orgWorkspacePath: "root:orgs"
+  tokenReviewWorkspacePath: "root:orgs"
+  group: "search.platform-mesh.io"
+  version: "v1alpha1"
+  resource: "searchindexes"
+
+search:
+  defaultLimit: 20
+  maxLimit: 100
+  fetchBatchSize: 100
+  maxScannedHits: 1000
+  baseDomain: "portal.localhost"
+
+# -- Enable hostAliases for in-cluster DNS resolution (needed for kind/local setups)
+hostAliases:
+  enabled: false
