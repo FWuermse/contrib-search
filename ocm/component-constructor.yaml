@@ -31,8 +31,8 @@ components:
           commit: ${COMMIT}
     componentReferences:
       - name: search-operator
-        componentName: github.com/platform-mesh/search-operator
+        componentName: github.com/platform-mesh/contrib-search/search-operator
         version: ${VERSION}
       - name: search-service
-        componentName: github.com/platform-mesh/search-service
+        componentName: github.com/platform-mesh/contrib-search/search-service
         version: ${VERSION}

@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Publishes the OCM component github.com/platform-mesh/images/<component> for
+# Publishes the OCM component github.com/platform-mesh/contrib-search/images/<component> for
 # an image built from this repository: the image (by digest), its SBOMs and
 # the git source. The aggregate built by build-aggregate.sh references these
 # components from the charts' service components.
@@ -70,7 +70,7 @@ require_tools ocm
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >&2; }
 
-name="github.com/platform-mesh/images/$COMPONENT"
+name="github.com/platform-mesh/contrib-search/images/$COMPONENT"
 if "$OCM" get component-version "$OCM_REPO//$name:$VERSION" -o json >/dev/null 2>&1; then
   echo "error: $name:$VERSION already exists in $OCM_REPO; published versions are immutable" >&2
   exit 1

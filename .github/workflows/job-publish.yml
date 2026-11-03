@@ -21,10 +21,10 @@ name: publish
 #   1. images     every component image from ocm/components.yaml, tagged
 #                 v<version>, for linux/amd64 and linux/arm64, cosign-signed,
 #                 with SBOMs attested to the image and published as the OCM
-#                 component github.com/platform-mesh/images/<component>:<version>
+#                 component github.com/platform-mesh/contrib-search/images/<component>:<version>
 #   2. aggregate  hack/release/build-aggregate.sh: charts packaged at <version>,
 #                 their OCM components and the aggregate
-#                 github.com/platform-mesh/search:<version>, all signed
+#                 github.com/platform-mesh/contrib-search:<version>, optionally OCM-signed
 #   3. trivy      vulnerability scans of the images and SBOMs
 
 on:
@@ -42,17 +42,18 @@ on:
     secrets:
       OCM_SIGNING_PRIVATE_KEY:
         description: "PEM private key the OCM components are signed with"
-        required: true
+        required: false
       OCM_SIGNING_CERT:
         description: "Certificate matching OCM_SIGNING_PRIVATE_KEY; its CN is the signature name"
-        required: true
+        required: false
 
 permissions:
   contents: read
 
 env:
-  OCM_REPO: ghcr.io/${{ github.repository_owner }}
-  SIGNATURE: ${{ vars.OCM_SIGNATURE_NAME || 'platform-mesh.platform-mesh' }}
+  OCM_REPO: ghcr.io/${{ github.repository_owner }}/contrib-search
+  # Enable OCM signing once the signing key and certificate are configured.
+  SIGNATURE: ${{ vars.OCM_SIGNING_ENABLED == 'true' && (vars.OCM_SIGNATURE_NAME || 'platform-mesh.platform-mesh') || '' }}
 
 jobs:
   # ──────────────────────────────────────────────
@@ -157,14 +158,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OCM_SIGNING_PRIVATE_KEY: ${{ secrets.OCM_SIGNING_PRIVATE_KEY }}
-          OCM_SIGNING_CERT: ${{ vars.OCM_SIGNING_CERT }}
+          OCM_SIGNING_CERT: ${{ secrets.OCM_SIGNING_CERT }}
         run: |
           set -euo pipefail
-          if [ -z "$OCM_SIGNING_PRIVATE_KEY" ] || [ -z "$OCM_SIGNING_CERT" ]; then
+          if [[ -n "$SIGNATURE" && ( -z "$OCM_SIGNING_PRIVATE_KEY" || -z "$OCM_SIGNING_CERT" ) ]]; then
             echo "::error::OCM_SIGNING_PRIVATE_KEY / OCM_SIGNING_CERT secrets are not set"; exit 1
           fi
           hack/release/ocm-config.sh "$OCM_REPO" "$SIGNATURE" > "$HOME/.ocmconfig"
-      - name: Publish OCM component github.com/platform-mesh/images/${{ matrix.component }}
+      - name: Publish OCM component github.com/platform-mesh/contrib-search/images/${{ matrix.component }}
         env:
           COMPONENT: ${{ matrix.component }}
           IMAGE_REF: ${{ steps.build.outputs.imageRef }}
@@ -198,11 +199,11 @@ jobs:
       - name: Install helm (pinned in tools/Taskfile.yaml)
         run: |
           echo "HELM=$(UGET_PRINT_PATH=absolute task tools:helm)" >> "$GITHUB_ENV"
-          echo "OCM_REPO=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+          echo "OCM_REPO=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/contrib-search" >> "$GITHUB_ENV"
       - name: Registry credentials
         run: |
           set -euo pipefail
-          if [ -z "$OCM_SIGNING_PRIVATE_KEY" ] || [ -z "$OCM_SIGNING_CERT" ]; then
+          if [[ -n "$SIGNATURE" && ( -z "$OCM_SIGNING_PRIVATE_KEY" || -z "$OCM_SIGNING_CERT" ) ]]; then
             echo "::error::OCM_SIGNING_PRIVATE_KEY / OCM_SIGNING_CERT secrets are not set"; exit 1
           fi
           echo "$GITHUB_TOKEN" | "$HELM" registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
@@ -210,7 +211,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OCM_SIGNING_PRIVATE_KEY: ${{ secrets.OCM_SIGNING_PRIVATE_KEY }}
-          OCM_SIGNING_CERT: ${{ vars.OCM_SIGNING_CERT }}
+          OCM_SIGNING_CERT: ${{ secrets.OCM_SIGNING_CERT }}
       - name: Build and publish OCM components
         run: |
           set -euo pipefail
@@ -262,5 +263,5 @@ jobs:
       packages: read
       security-events: write
     with:
-      componentName: github.com/platform-mesh/images/${{ matrix.component }}
+      componentName: github.com/platform-mesh/contrib-search/images/${{ matrix.component }}
       componentVersion: ${{ inputs.version }}

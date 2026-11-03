@@ -15,11 +15,9 @@
 # Local (vendored) copy of platform-mesh/.github's job-trivy-sbom.yml.
 #
 # The only change from upstream is IMAGE_REPO: upstream hardcodes the org-root
-# registry (ghcr.io/<owner>), but this monorepo's `image-ocm` job publishes the
-# OCM component version to the per-repo registry (ghcr.io/<owner>/<repo>). By
-# reading from the same place `image-ocm` writes, trivy-sbom depends only on
-# `image-ocm` (which it already `needs`) — no dependency on the legacy org-root
-# `image-ocm-legacy` publish, and therefore no race between the two.
+# registry (ghcr.io/<owner>), but job-publish.yml publishes OCM component
+# versions to ghcr.io/<owner>/contrib-search. Fetch their SBOMs from that
+# same repository.
 
 name: Scan SBOM for Latest Component Version
 
@@ -49,10 +47,9 @@ permissions: {} # Default-deny at workflow level; the job elevates what it needs
 
 env:
   REGISTRY_TOKEN: ${{ secrets.registryToken || secrets.GITHUB_TOKEN }}
-  # OCM repository the publish workflow publishes to (org root, the
-  # same repository the Platform Mesh aggregate and its consumers use).
-  IMAGE_REPO: ${{ format('ghcr.io/{0}', github.repository_owner) }}
-  COMPONENT: ${{ inputs.componentName || format('github.com/platform-mesh/images/{0}', github.event.repository.name) }}
+  # OCM repository used by job-publish.yml.
+  IMAGE_REPO: ${{ format('ghcr.io/{0}/contrib-search', github.repository_owner) }}
+  COMPONENT: ${{ inputs.componentName || format('github.com/platform-mesh/contrib-search/images/{0}', github.event.repository.name) }}
 
 jobs:
   scan-sbom:

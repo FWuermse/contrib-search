@@ -5,11 +5,11 @@ under `charts/`. All of them carry the version `V` of the build. The default
 shape is
 
 ```
-github.com/platform-mesh/<chart>:V                      service component
-  ├─ chart → github.com/platform-mesh/helm-charts/<chart>:V
+github.com/platform-mesh/contrib-search/<chart>:V       service component
+  ├─ chart → github.com/platform-mesh/contrib-search/helm-charts/<chart>:V
   │            resource "chart" (the packaged chart in the OCI registry)
   │            source   "chart" (this repository at the released commit)
-  └─ image → github.com/platform-mesh/images/<chart>:<image version>
+  └─ image → github.com/platform-mesh/contrib-search/images/<chart>:<image version>
 ```
 
 A file `ocm/charts/<chart>.yaml` adjusts the shape for one chart. All keys are
