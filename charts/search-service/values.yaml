@@ -1,5 +1,5 @@
 image:
-  name: ghcr.io/platform-mesh/search-service
+  name: ghcr.io/platform-mesh/contrib-search/search-service
   tag: latest
 
 imagePullPolicy: Always

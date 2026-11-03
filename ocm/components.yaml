@@ -19,7 +19,7 @@
 # Fields:
 #   path         directory of the component (module root)
 #   image        name of the primary image, pushed as
-#                ghcr.io/<owner>/platform-mesh/<image>:<version>
+#                ghcr.io/<owner>/contrib-search/<image>:<version>
 #   chart        the component's Helm chart, if any (charts/<name>). Marks the
 #                chart as one whose appVersion is bumped to the release version.
 #   e2e          whether `task test-e2e-<name>` exists (default true)

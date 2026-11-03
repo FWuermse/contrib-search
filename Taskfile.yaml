@@ -70,7 +70,7 @@ tasks:
     desc: "Build (and optionally push) one component's image (e.g. task images-search-operator VERSION=v0.1.0 PUSH=true)."
     vars:
       REGISTRY: '{{.REGISTRY | default "ghcr.io"}}'
-      REPO: '{{.REPO | default "platform-mesh"}}'   # ghcr namespace: <registry>/<repo>/<name>, i.e. ghcr.io/platform-mesh/<name>
+      REPO: '{{.REPO | default "platform-mesh/contrib-search"}}'   # ghcr namespace: <registry>/<repo>/<name>
       VERSION: '{{.VERSION | default "dev"}}'
       PUSH: '{{.PUSH | default "false"}}'
       PLATFORMS: '{{.PLATFORMS | default "linux/amd64"}}'
