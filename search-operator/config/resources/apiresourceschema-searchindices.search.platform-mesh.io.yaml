@@ -15,7 +15,7 @@
 apiVersion: apis.kcp.io/v1alpha1
 kind: APIResourceSchema
 metadata:
-  name: v260623-3da051b6.searchindices.search.platform-mesh.io
+  name: v261016-f6df8106.searchindices.search.platform-mesh.io
 spec:
   group: search.platform-mesh.io
   names:
@@ -59,6 +59,22 @@ spec:
         spec:
           description: Spec defines the desired state of SearchIndex
           properties:
+            defaultFieldTypes:
+              additionalProperties:
+                description: FieldType is the scalar type of an indexed field.
+                enum:
+                - string
+                - integer
+                - number
+                - boolean
+                - date
+                type: string
+              description: |-
+                DefaultFieldTypes maps DefaultFields paths to the scalar type declared in
+                the APIResourceSchema. Typed fields get an explicit, sortable index mapping;
+                paths without a scalar type (objects, maps, arrays of objects) are indexed
+                as text.
+              type: object
             defaultFields:
               description: |-
                 DefaultFields lists all field paths derived from the APIResourceSchemas of

@@ -22,6 +22,7 @@ ARG TARGETARCH
 
 WORKDIR /workspace
 
+COPY search-operator/ search-operator/
 COPY search-service/ search-service/
 
 WORKDIR /workspace/search-service

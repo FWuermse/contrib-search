@@ -1,6 +1,6 @@
 module go.platform-mesh.io/search-service
 
-go 1.26.0
+go 1.26.3
 
 require (
 	github.com/go-chi/chi/v5 v5.4.0
@@ -10,7 +10,6 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0
-	go.platform-mesh.io/apis v0.1.0
 	go.platform-mesh.io/golang-commons v0.19.0
 	google.golang.org/grpc v1.83.2
 	k8s.io/api v0.36.3
@@ -65,6 +64,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
+	go.platform-mesh.io/search-operator v0.0.0
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/net v0.60.0 // indirect
@@ -86,3 +86,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace go.platform-mesh.io/search-operator => ../search-operator

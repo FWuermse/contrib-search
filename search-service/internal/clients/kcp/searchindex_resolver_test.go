@@ -19,6 +19,7 @@ package kcp
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -41,7 +42,8 @@ func TestListIndicesBuildsResourceDescriptors(t *testing.T) {
 						"spec": map[string]any{
 							"indexPrefix":           "pm",
 							"organizationClusterID": "cluster-123",
-							"defaultFields":         []string{"displayName", "description"},
+							"defaultFields":         []string{"displayName", "description", "spec.extra"},
+							"defaultFieldTypes":     map[string]string{"displayName": "string", "description": "string"},
 							"filterableFields":      []string{"status"},
 							"semanticFields":        []string{"description"},
 						},
@@ -75,6 +77,12 @@ func TestListIndicesBuildsResourceDescriptors(t *testing.T) {
 	}
 	if refs[0].Resource != "accounts" || refs[1].Resource != "products" {
 		t.Fatalf("unexpected resources: %+v", refs)
+	}
+	if want := map[string]string{"displayName": "string", "description": "string"}; !maps.Equal(refs[0].DefaultFieldTypes, want) {
+		t.Fatalf("DefaultFieldTypes = %v, want %v", refs[0].DefaultFieldTypes, want)
+	}
+	if refs[1].DefaultFieldTypes != nil {
+		t.Fatalf("expected no DefaultFieldTypes without types, got %v", refs[1].DefaultFieldTypes)
 	}
 }
 

@@ -152,11 +152,7 @@ func BuildQueryBody(req search.OpenSearchQuery) ([]byte, error) {
 		"size":             req.Size,
 		"query":            queryClause,
 		"track_total_hits": true,
-		"sort": []map[string]string{
-			{"_score": "desc"},
-			{"_id": "asc"},
-			{"_index": "asc"},
-		},
+		"sort":             sortClause(req.SortField, req.SortOrder),
 	}
 
 	if len(req.SearchAfter) > 0 {
@@ -182,6 +178,31 @@ func BuildQueryBody(req search.OpenSearchQuery) ([]byte, error) {
 		}
 	}
 	return json.Marshal(body)
+}
+
+// sortClause orders by the requested field first, if any. The relevance, _id
+// and _index keys stay as tiebreakers so search_after pagination remains total.
+func sortClause(field, order string) []map[string]any {
+	tiebreakers := []map[string]any{
+		{"_score": "desc"},
+		{"_id": "asc"},
+		{"_index": "asc"},
+	}
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return tiebreakers
+	}
+	if order != search.SortOrderDesc {
+		order = search.SortOrderAsc
+	}
+
+	return append([]map[string]any{{
+		field: map[string]any{
+			"order":         order,
+			"missing":       "_last",
+			"unmapped_type": "keyword",
+		},
+	}}, tiebreakers...)
 }
 
 func buildSemanticQueryClause(query string, semanticFields []string) (map[string]any, error) {
@@ -245,6 +266,8 @@ func (c *Client) Search(ctx context.Context, query search.OpenSearchQuery) (sear
 		Size:              query.Size,
 		SearchAfter:       query.SearchAfter,
 		AggregationField:  query.AggregationField,
+		SortField:         query.SortField,
+		SortOrder:         query.SortOrder,
 	})
 	if err != nil {
 		return search.OpenSearchPage{}, fmt.Errorf("build OpenSearch query body: %w", err)
@@ -299,11 +322,11 @@ func (c *Client) Search(ctx context.Context, query search.OpenSearchQuery) (sear
 				Value int `json:"value"`
 			} `json:"total"`
 			Hits []struct {
-				Index  string         `json:"_index"`
-				ID     string         `json:"_id"`
-				Score  float64        `json:"_score"`
-				Sort   []any          `json:"sort"`
-				Source map[string]any `json:"_source"`
+				Index  string          `json:"_index"`
+				ID     string          `json:"_id"`
+				Score  float64         `json:"_score"`
+				Sort   json.RawMessage `json:"sort"`
+				Source map[string]any  `json:"_source"`
 			} `json:"hits"`
 		} `json:"hits"`
 		Aggregations map[string]struct {
@@ -318,11 +341,15 @@ func (c *Client) Search(ctx context.Context, query search.OpenSearchQuery) (sear
 
 	hits := make([]search.OpenSearchHit, 0, len(payload.Hits.Hits))
 	for _, hit := range payload.Hits.Hits {
+		sortValues, err := decodeSortValues(hit.Sort)
+		if err != nil {
+			return search.OpenSearchPage{}, fmt.Errorf("decode OpenSearch sort values: %w", err)
+		}
 		hits = append(hits, search.OpenSearchHit{
 			Index:  hit.Index,
 			ID:     hit.ID,
 			Score:  hit.Score,
-			Sort:   hit.Sort,
+			Sort:   sortValues,
 			Source: hit.Source,
 		})
 	}
@@ -365,6 +392,23 @@ func (c *Client) Search(ctx context.Context, query search.OpenSearchQuery) (sear
 		ShardsFailed:      payload.Shards.Failed,
 		ShardFailures:     shardFailures,
 	}, nil
+}
+
+// decodeSortValues keeps numbers as json.Number: field sorts on long values
+// (and the Long.MAX_VALUE used for missing ones) lose precision as float64, and
+// the values travel back to OpenSearch verbatim as search_after.
+func decodeSortValues(raw json.RawMessage) ([]any, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	var values []any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&values); err != nil {
+		return nil, err
+	}
+	return values, nil
 }
 
 func normalizeFilters(filters map[string][]string) map[string][]string {

@@ -116,6 +116,23 @@ func TestCreateRouterSearchSuccess(t *testing.T) {
 	}
 }
 
+func TestCreateRouterSearchForwardsSort(t *testing.T) {
+	svc := &fakeSearchService{}
+	r := CreateRouter(svc, []func(http.Handler) http.Handler{
+		withRequestContext(appcontext.RequestContext{Organization: "acme", User: "alice@example.com"}),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=hello&resource=components&sort=spec.displayName&order=desc", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+	if svc.lastReq.SortField != "spec.displayName" || svc.lastReq.SortOrder != "desc" {
+		t.Fatalf("unexpected sort: field=%q order=%q", svc.lastReq.SortField, svc.lastReq.SortOrder)
+	}
+}
+
 func TestCreateRouterSearchAcceptsFirstPage(t *testing.T) {
 	svc := &fakeSearchService{}
 	r := CreateRouter(svc, []func(http.Handler) http.Handler{

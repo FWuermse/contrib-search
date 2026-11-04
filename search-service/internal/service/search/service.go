@@ -125,6 +125,13 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) (SearchResponse
 	if resource == "" && len(filters) > 0 {
 		return SearchResponse{}, fmt.Errorf("%w: filters require a resource", ErrInvalidRequest)
 	}
+	sortField, sortOrder, err := normalizeSort(req.SortField, req.SortOrder)
+	if err != nil {
+		return SearchResponse{}, err
+	}
+	if resource == "" && sortField != "" {
+		return SearchResponse{}, fmt.Errorf("%w: sort requires a resource", ErrInvalidRequest)
+	}
 
 	if mode == SearchModeSemantic && resource == "" {
 		return SearchResponse{}, fmt.Errorf("%w: semantic mode requires a resource", ErrInvalidRequest)
@@ -163,13 +170,14 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) (SearchResponse
 
 	qHash := queryHash(query)
 	fHash := cursorFiltersHash(filters, fgaRole)
+	sort := cursorSort(sortField, sortOrder)
 	var searchAfter []any
 	if req.Cursor != "" {
 		decoded, err := DecodeCursor(req.Cursor)
 		if err != nil {
 			return SearchResponse{}, err
 		}
-		if err := ValidateCursor(decoded, org, qHash, mode, resource, fHash, limit); err != nil {
+		if err := ValidateCursor(decoded, org, qHash, mode, resource, fHash, sort, limit); err != nil {
 			log.Error().Err(err).Str("searchmode", mode).Str("cursor", req.Cursor).Msg("invalid cursor")
 			return SearchResponse{}, err
 		}
@@ -208,6 +216,7 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) (SearchResponse
 		searchFields    []string
 		semanticFields  []string
 		filterQuery     map[string][]string
+		indexSortField  string
 	)
 
 	if resource != "" {
@@ -222,6 +231,10 @@ func (s *Service) Search(ctx context.Context, req SearchRequest) (SearchResponse
 		}
 		if mode == SearchModeSemantic && len(indexRef.SemanticFields) == 0 {
 			return SearchResponse{}, fmt.Errorf("%w: resource %q has no semantic fields configured", ErrInvalidRequest, resource)
+		}
+		indexSortField, err = resolveSortField(sortField, resource, indexRef)
+		if err != nil {
+			return SearchResponse{}, err
 		}
 
 		indices = []string{indexRef.IndexName}
@@ -271,6 +284,8 @@ outer:
 			AccountFGAObjects: accountFGAObjects,
 			Size:              s.cfg.FetchBatchSize,
 			SearchAfter:       searchAfter,
+			SortField:         indexSortField,
+			SortOrder:         sortOrder,
 		})
 		s.metrics.AddOpenSearchCalls(1)
 		if err != nil {
@@ -350,6 +365,7 @@ outer:
 			Mode:        mode,
 			Resource:    resource,
 			FiltersHash: fHash,
+			Sort:        sort,
 			Limit:       limit,
 			SearchAfter: nextSearchAfter,
 		})

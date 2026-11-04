@@ -109,6 +109,8 @@ func CreateRouter(svc SearchService, mws []func(http.Handler) http.Handler) *chi
 				Resource:     res,
 				Filters:      filters,
 				FGARole:      fgaRole,
+				SortField:    strings.TrimSpace(r.URL.Query().Get("sort")),
+				SortOrder:    strings.TrimSpace(r.URL.Query().Get("order")),
 				Limit:        limit,
 				Page:         page,
 				Cursor:       strings.TrimSpace(r.URL.Query().Get("cursor")),

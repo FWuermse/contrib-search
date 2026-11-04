@@ -24,8 +24,8 @@ import (
 	"slices"
 	"strings"
 
-	pmsearchv1alpha1 "go.platform-mesh.io/apis/search/v1alpha1"
 	"go.platform-mesh.io/golang-commons/logger"
+	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
 	"go.platform-mesh.io/search-service/internal/config"
 	"go.platform-mesh.io/search-service/internal/service/search"
 	"go.platform-mesh.io/search-service/internal/stringset"
@@ -262,11 +262,25 @@ func mapSearchIndexRef(item pmsearchv1alpha1.SearchIndex, orgClusterID string, c
 		IndexPrefix:           strings.TrimSpace(item.Spec.IndexPrefix),
 		OrganizationClusterID: orgID,
 		DefaultFields:         stringset.DedupeSorted(item.Spec.DefaultFields),
+		DefaultFieldTypes:     defaultFieldTypes(item.Spec.DefaultFieldTypes),
 		FilterableFields:      stringset.DedupeSorted(item.Spec.FilterableFields),
 		SemanticFields:        stringset.DedupeSorted(item.Spec.SemanticFields),
 		Group:                 cfg.Group,
 		Version:               cfg.Version,
 	}, true
+}
+
+func defaultFieldTypes(types map[string]pmsearchv1alpha1.FieldType) map[string]string {
+	if len(types) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(types))
+	for field, fieldType := range types {
+		if field = strings.TrimSpace(field); field != "" && fieldType != "" {
+			out[field] = string(fieldType)
+		}
+	}
+	return out
 }
 
 func deriveResourceName(name, indexPrefix, orgClusterID string) string {

@@ -26,6 +26,8 @@ type SearchRequest struct {
 	Resource     string
 	Filters      map[string][]string
 	FGARole      string
+	SortField    string
+	SortOrder    string
 	Limit        int
 	Page         int
 	Cursor       string
@@ -90,10 +92,13 @@ type SearchIndexRef struct {
 	IndexPrefix           string
 	OrganizationClusterID string
 	DefaultFields         []string
-	FilterableFields      []string
-	SemanticFields        []string
-	Group                 string
-	Version               string
+	// DefaultFieldTypes holds the schema type of typed DefaultFields; only
+	// those carry a sortable subfield in the index.
+	DefaultFieldTypes map[string]string
+	FilterableFields  []string
+	SemanticFields    []string
+	Group             string
+	Version           string
 }
 
 type OpenSearchHit struct {
@@ -133,6 +138,9 @@ type OpenSearchQuery struct {
 	Size              int
 	SearchAfter       []any
 	AggregationField  string
+	// SortField is a resolved OpenSearch field path; empty sorts by relevance.
+	SortField string
+	SortOrder string
 }
 
 type AuthorizationRequest struct {

@@ -28,7 +28,7 @@ The service is organization-aware and derives org context from the request host.
 
 ### Search endpoint
 
-`GET /rest/v1/search?q=<query>&mode=<lexical|semantic>&limit=<n>&page=<n>&cursor=<opaque>&resource=<plural>&resources=<plural,...>&filter.<field>=<value>&filter.fga_role=<relation>`
+`GET /rest/v1/search?q=<query>&mode=<lexical|semantic>&limit=<n>&page=<n>&cursor=<opaque>&resource=<plural>&resources=<plural,...>&filter.<field>=<value>&filter.fga_role=<relation>&sort=<field>&order=<asc|desc>`
 
 Query params:
 
@@ -38,6 +38,8 @@ Query params:
 - `resources` (optional): comma-separated resource names used when `resource` is omitted
 - `filter.<field>` (optional, repeatable): exact-match filters; requires `resource`
 - `filter.fga_role` (optional, single value): restricts the account pre-filter to an arbitrary relation from the active OpenFGA account model, for example `owner`; requires an explicit target through `resource` or `resources`. An empty, repeated, malformed, or schema-unknown relation is rejected with `400 Bad Request`
+- `sort` (optional): field to order results by instead of relevance; must be one of the target resource's `filterableFields`, or a `defaultFields` entry with a scalar type in `defaultFieldTypes`, and requires `resource` (or `resources`)
+- `order` (optional): `asc` (default) or `desc`; requires `sort`
 - `limit` (optional): default `20`, max `100`
 - `page` (optional): 1-based result page using `limit` as the page size; used when `cursor` is omitted
 - `cursor` (optional): opaque pagination cursor
@@ -52,6 +54,13 @@ batch-checked with OpenFGA as a defense in depth measure.
 By default, account access is resolved with the configured `--openfga-default-role`. When `filter.fga_role` is
 provided, that relation is used for this request instead. The selected relation is also bound to the pagination
 cursor, so a cursor cannot be continued with a different role.
+
+Sorting is done by OpenSearch, so both page- and cursor-based pagination follow the requested order across pages.
+Filterable fields sort on `filterable_fields.<field>` (keyword). Typed default fields sort on the
+`default_fields.<field>.sort` subfield the search-operator maps for them: a case-insensitive keyword for strings,
+and the native type for numbers, dates and booleans. Documents without a value sort last in both directions, and
+ties fall back to relevance. Any other field, including objects, maps and arrays of objects, is rejected with
+`400 Bad Request`. The sort is bound to the pagination cursor as well.
 
 Semantic mode behavior:
 
@@ -71,6 +80,8 @@ Examples:
   - `GET /rest/v1/search?q=developer+portal&resource=components&filter.fga_role=owner&filter.status=Ready`
 - Semantic search within one resource:
   - `GET /rest/v1/search?q=developer+portal&resource=components&mode=semantic`
+- Components sorted by display name, descending:
+  - `GET /rest/v1/search?q=developer+portal&resource=components&sort=spec.displayName&order=desc`
 
 Response shape:
 

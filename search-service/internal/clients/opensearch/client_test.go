@@ -384,3 +384,62 @@ func containsField(fields []any, want string) bool {
 	}
 	return false
 }
+
+func TestBuildQueryBodySortsByFieldBeforeTiebreakers(t *testing.T) {
+	body, err := BuildQueryBody(search.OpenSearchQuery{
+		Query:     "hello",
+		Size:      10,
+		SortField: "default_fields.spec.displayName.keyword",
+		SortOrder: search.SortOrderDesc,
+	})
+	if err != nil {
+		t.Fatalf("BuildQueryBody returned error: %v", err)
+	}
+
+	var payload struct {
+		Sort []map[string]any `json:"sort"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("invalid json: %v", err)
+	}
+	if len(payload.Sort) != 4 {
+		t.Fatalf("expected field sort plus 3 tiebreakers, got %v", payload.Sort)
+	}
+	field, ok := payload.Sort[0]["default_fields.spec.displayName.keyword"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected field sort first, got %v", payload.Sort[0])
+	}
+	if field["order"] != "desc" || field["missing"] != "_last" || field["unmapped_type"] != "keyword" {
+		t.Fatalf("unexpected field sort options: %v", field)
+	}
+	if payload.Sort[1]["_score"] != "desc" || payload.Sort[2]["_id"] != "asc" || payload.Sort[3]["_index"] != "asc" {
+		t.Fatalf("unexpected tiebreakers: %v", payload.Sort[1:])
+	}
+}
+
+func TestClientSearchKeepsSortValuesExact(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"hits":{"total":{"value":1},"hits":[{"_id":"1","_score":1.5,"sort":[9223372036854775807,1.5,"1"],"_source":{"stars":3}}]}}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{URL: server.URL})
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
+	page, err := client.Search(context.Background(), search.OpenSearchQuery{Indices: []string{"idx"}, Size: 10})
+	if err != nil {
+		t.Fatalf("Search returned error: %v", err)
+	}
+
+	raw, err := json.Marshal(page.Hits[0].Sort)
+	if err != nil {
+		t.Fatalf("marshal sort values: %v", err)
+	}
+	if got, want := string(raw), `[9223372036854775807,1.5,"1"]`; got != want {
+		t.Fatalf("sort values = %s, want %s", got, want)
+	}
+	if _, ok := page.Hits[0].Source["stars"].(float64); !ok {
+		t.Fatalf("source decoding must be unchanged, got %T", page.Hits[0].Source["stars"])
+	}
+}

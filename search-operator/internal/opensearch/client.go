@@ -124,6 +124,11 @@ func (c *Client) CreateIndex(ctx context.Context, indexName string, numberOfShar
 				"number_of_replicas": numberOfReplicas,
 				"knn":                true,
 			},
+			"analysis": map[string]any{
+				"normalizer": map[string]any{
+					sortNormalizer: map[string]any{"type": "custom", "filter": []string{"lowercase"}},
+				},
+			},
 		},
 	}
 	if mapping != "" {

@@ -17,6 +17,7 @@ limitations under the License.
 package search
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,7 @@ type CursorState struct {
 	Mode        string `json:"m,omitzero"`
 	Resource    string `json:"r,omitzero"`
 	FiltersHash string `json:"fh,omitzero"`
+	Sort        string `json:"s,omitzero"`
 	Limit       int    `json:"l"`
 	SearchAfter []any  `json:"sa"`
 }
@@ -56,8 +58,12 @@ func DecodeCursor(token string) (CursorState, error) {
 		return CursorState{}, fmt.Errorf("%w: invalid base64", ErrInvalidCursor)
 	}
 
+	// UseNumber keeps search_after values exact: long sort values such as the
+	// Long.MAX_VALUE that OpenSearch uses for missing fields do not fit a float64.
 	var state CursorState
-	if err := json.Unmarshal(raw, &state); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&state); err != nil {
 		return CursorState{}, fmt.Errorf("%w: invalid payload", ErrInvalidCursor)
 	}
 
@@ -71,7 +77,7 @@ func DecodeCursor(token string) (CursorState, error) {
 	return state, nil
 }
 
-func ValidateCursor(state CursorState, org, qHash, mode, resource, fHash string, limit int) error {
+func ValidateCursor(state CursorState, org, qHash, mode, resource, fHash, sort string, limit int) error {
 	if state.Org != org {
 		return fmt.Errorf("%w: org mismatch", ErrInvalidCursor)
 	}
@@ -86,6 +92,9 @@ func ValidateCursor(state CursorState, org, qHash, mode, resource, fHash string,
 	}
 	if state.FiltersHash != fHash {
 		return fmt.Errorf("%w: filters mismatch", ErrInvalidCursor)
+	}
+	if state.Sort != sort {
+		return fmt.Errorf("%w: sort mismatch", ErrInvalidCursor)
 	}
 	if state.Limit != limit {
 		return fmt.Errorf("%w: limit mismatch", ErrInvalidCursor)

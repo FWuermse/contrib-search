@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
+
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 )
 
@@ -31,10 +33,20 @@ var DefaultFilterableFields = []string{"kind", "name", "namespace", "cluster_nam
 
 // FieldMappings holds the dot-notation field paths that drive the dynamic part of the index mapping.
 type FieldMappings struct {
-	Default    []string
-	Semantic   []string
-	Filterable []string
+	Default []string
+	// DefaultTypes holds the schema type of Default paths; untyped paths are indexed as text.
+	DefaultTypes map[string]pmsearchv1alpha1.FieldType
+	Semantic     []string
+	Filterable   []string
 }
+
+// SortSubfield is the subfield every default field carries for sorting: a
+// lowercased keyword for text, the field's own type otherwise. Callers sort on
+// default_fields.<path>.sort without knowing the field's type.
+const SortSubfield = "sort"
+
+// sortNormalizer makes keyword sorting case-insensitive; CreateIndex defines it.
+const sortNormalizer = "sort_normalizer"
 
 // DefaultIndexMapping returns the default OpenSearch index mapping for workspace and resource documents.
 // - default_fields stores SearchIndex default fields for lexical search and UI source display.
@@ -42,7 +54,15 @@ type FieldMappings struct {
 // - filterable_fields stores SearchIndex filterable fields as exact-match facets.
 // - payload_raw_json is stored but not indexed.
 // - payload_text stores the full serialized object for full-text search.
+//
+// Typed default fields are mapped from their schema type. Everything else under
+// default_fields (untyped paths and the contents of maps and objects) is mapped
+// as text, so the first document cannot fix a type that later values break.
 func DefaultIndexMapping(fields FieldMappings, semanticModelID string) (string, error) {
+	defaultProperties := map[string]any{}
+	filterableProperties := map[string]any{}
+	semanticProperties := map[string]any{}
+
 	properties := map[string]any{
 		"id": map[string]any{"type": "keyword"},
 		"name": map[string]any{
@@ -74,33 +94,40 @@ func DefaultIndexMapping(fields FieldMappings, semanticModelID string) (string, 
 				"object":   map[string]any{"type": "keyword"},
 			},
 		},
-		"created_at":      map[string]any{"type": "date"},
-		"updated_at":      map[string]any{"type": "date"},
-		"default_fields":  map[string]any{"type": "object", "dynamic": true},
-		"semantic_fields": map[string]any{"type": "object", "dynamic": false, "properties": map[string]any{}},
+		"created_at": map[string]any{"type": "date"},
+		"updated_at": map[string]any{"type": "date"},
+		"default_fields": map[string]any{
+			"type":       "object",
+			"dynamic":    true,
+			"properties": defaultProperties,
+		},
+		"semantic_fields": map[string]any{
+			"type":       "object",
+			"dynamic":    false,
+			"properties": semanticProperties,
+		},
 		"filterable_fields": map[string]any{
-			"type":    "object",
-			"dynamic": true,
+			"type":       "object",
+			"dynamic":    true,
+			"properties": filterableProperties,
 		},
 		"payload_raw_json": map[string]any{"type": "keyword", "index": false, "doc_values": false},
 		"payload_text":     map[string]any{"type": "text"},
 	}
 
 	for _, fieldPath := range fields.Default {
-		leaf := map[string]any{
-			"type": "text",
-			"fields": map[string]any{
-				"keyword": map[string]any{"type": "keyword", "ignore_above": 256},
-			},
+		leaf := typedLeafMapping(fields.DefaultTypes[fieldPath])
+		if leaf == nil {
+			continue
 		}
-		if err := setLeafMapping(properties, fieldPath, leaf, false); err != nil {
+		if err := setLeafMapping(defaultProperties, fieldPath, leaf, false); err != nil {
 			return "", err
 		}
 	}
 
 	for _, fieldPath := range fields.Filterable {
 		leaf := map[string]any{"type": "keyword"}
-		if err := setLeafMapping(properties, fieldPath, leaf, false); err != nil {
+		if err := setLeafMapping(filterableProperties, fieldPath, leaf, false); err != nil {
 			return "", err
 		}
 	}
@@ -110,30 +137,39 @@ func DefaultIndexMapping(fields FieldMappings, semanticModelID string) (string, 
 		if semanticModelID == "" {
 			return "", fmt.Errorf("semantic model id is required when semantic fields are configured")
 		}
-		semanticProperties := properties["semantic_fields"].(map[string]any)["properties"].(map[string]any)
 		for _, fieldPath := range fields.Semantic {
 			leaf := map[string]any{"type": "semantic", "model_id": semanticModelID}
 			if err := setLeafMapping(semanticProperties, fieldPath, leaf, true); err != nil {
 				return "", err
 			}
-			if err := setLeafMapping(properties, fieldPath, leaf, true); err != nil {
-				return "", err
-			}
 		}
+	}
+
+	dynamicTemplates := []map[string]any{
+		{
+			"filterable_fields_keywords": map[string]any{
+				"path_match":         "filterable_fields.*",
+				"match_mapping_type": "string",
+				"mapping":            map[string]any{"type": "keyword"},
+			},
+		},
+	}
+	for _, jsonType := range []string{"string", "long", "double", "boolean"} {
+		dynamicTemplates = append(dynamicTemplates, map[string]any{
+			"default_fields_" + jsonType + "_as_text": map[string]any{
+				"path_match":         "default_fields.*",
+				"match_mapping_type": jsonType,
+				"mapping":            textLeafMapping(),
+			},
+		})
 	}
 
 	mapping := map[string]any{
 		"dynamic": false,
-		"dynamic_templates": []map[string]any{
-			{
-				"filterable_fields_keywords": map[string]any{
-					"path_match":         "filterable_fields.*",
-					"match_mapping_type": "string",
-					"mapping":            map[string]any{"type": "keyword"},
-				},
-			},
-		},
-		"properties": properties,
+		// Strings that look like dates must not turn a field into a date.
+		"date_detection":    false,
+		"dynamic_templates": dynamicTemplates,
+		"properties":        properties,
 	}
 
 	raw, err := json.Marshal(mapping)
@@ -144,9 +180,45 @@ func DefaultIndexMapping(fields FieldMappings, semanticModelID string) (string, 
 	return string(raw), nil
 }
 
+// typedLeafMapping maps a schema type to a field with a SortSubfield of the
+// same type. It returns nil for untyped paths, which the dynamic templates map.
+func typedLeafMapping(fieldType pmsearchv1alpha1.FieldType) map[string]any {
+	var osType string
+	switch fieldType {
+	case pmsearchv1alpha1.FieldTypeString:
+		return textLeafMapping()
+	case pmsearchv1alpha1.FieldTypeInteger:
+		osType = "long"
+	case pmsearchv1alpha1.FieldTypeNumber:
+		osType = "double"
+	case pmsearchv1alpha1.FieldTypeBoolean:
+		osType = "boolean"
+	case pmsearchv1alpha1.FieldTypeDate:
+		osType = "date"
+	default:
+		return nil
+	}
+
+	return map[string]any{
+		"type": osType,
+		"fields": map[string]any{
+			SortSubfield: map[string]any{"type": osType},
+		},
+	}
+}
+
+func textLeafMapping() map[string]any {
+	return map[string]any{
+		"type": "text",
+		"fields": map[string]any{
+			SortSubfield: map[string]any{"type": "keyword", "ignore_above": 256, "normalizer": sortNormalizer},
+		},
+	}
+}
+
 // setLeafMapping places leafMapping at fieldPath, creating {type:object, properties:{}} intermediates
 // along the way. When overwrite is false and a leaf already exists at fieldPath, it is left untouched
-// (used to enforce priority: semantic > filterable > default).
+// (used to keep the first mapping of a path).
 func setLeafMapping(properties map[string]any, fieldPath string, leafMapping map[string]any, overwrite bool) error {
 	segments := splitFieldPath(fieldPath)
 	if len(segments) == 0 {

@@ -16,7 +16,10 @@ limitations under the License.
 
 package search
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestCursorRoundTrip(t *testing.T) {
 	state := CursorState{
@@ -48,16 +51,50 @@ func TestCursorRoundTrip(t *testing.T) {
 
 func TestValidateCursorMismatch(t *testing.T) {
 	state := CursorState{Version: cursorVersion, Org: "acme", QueryHash: queryHash("foo"), Mode: SearchModeLexical, Limit: 20, SearchAfter: []any{1.0, "x"}}
-	if err := ValidateCursor(state, "other", queryHash("foo"), SearchModeLexical, "", "", 20); err == nil {
+	if err := ValidateCursor(state, "other", queryHash("foo"), SearchModeLexical, "", "", "", 20); err == nil {
 		t.Fatalf("expected org mismatch error")
 	}
-	if err := ValidateCursor(state, "acme", queryHash("bar"), SearchModeLexical, "", "", 20); err == nil {
+	if err := ValidateCursor(state, "acme", queryHash("bar"), SearchModeLexical, "", "", "", 20); err == nil {
 		t.Fatalf("expected query mismatch error")
 	}
-	if err := ValidateCursor(state, "acme", queryHash("foo"), SearchModeSemantic, "", "", 20); err == nil {
+	if err := ValidateCursor(state, "acme", queryHash("foo"), SearchModeSemantic, "", "", "", 20); err == nil {
 		t.Fatalf("expected mode mismatch error")
 	}
-	if err := ValidateCursor(state, "acme", queryHash("foo"), SearchModeLexical, "", "", 30); err == nil {
+	if err := ValidateCursor(state, "acme", queryHash("foo"), SearchModeLexical, "", "", "", 30); err == nil {
 		t.Fatalf("expected limit mismatch error")
+	}
+	if err := ValidateCursor(state, "acme", queryHash("foo"), SearchModeLexical, "", "", "name:asc", 20); err == nil {
+		t.Fatalf("expected sort mismatch error")
+	}
+}
+
+func TestCursorRoundTripKeepsLongSortValuesExact(t *testing.T) {
+	state := CursorState{
+		Version:     cursorVersion,
+		Org:         "acme",
+		QueryHash:   queryHash("foo"),
+		Sort:        "spec.stars:asc",
+		Limit:       20,
+		SearchAfter: []any{json.Number("9223372036854775807"), json.Number("1.5"), "abc", nil},
+	}
+
+	encoded, err := EncodeCursor(state)
+	if err != nil {
+		t.Fatalf("EncodeCursor returned error: %v", err)
+	}
+	decoded, err := DecodeCursor(encoded)
+	if err != nil {
+		t.Fatalf("DecodeCursor returned error: %v", err)
+	}
+
+	raw, err := json.Marshal(decoded.SearchAfter)
+	if err != nil {
+		t.Fatalf("marshal search_after: %v", err)
+	}
+	if got, want := string(raw), `[9223372036854775807,1.5,"abc",null]`; got != want {
+		t.Fatalf("search_after = %s, want %s", got, want)
+	}
+	if decoded.Sort != state.Sort {
+		t.Fatalf("sort = %q, want %q", decoded.Sort, state.Sort)
 	}
 }

@@ -17,25 +17,43 @@ limitations under the License.
 package subroutine
 
 import (
-	"sort"
+	"context"
+	"encoding/json"
+	"maps"
+	"slices"
 	"testing"
 
+	pmsearchv1alpha1 "go.platform-mesh.io/search-operator/api/v1alpha1"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	kcpapisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
 )
 
 func objectSchema(props map[string]apiextensionsv1.JSONSchemaProps) apiextensionsv1.JSONSchemaProps {
 	return apiextensionsv1.JSONSchemaProps{Type: "object", Properties: props}
 }
 
-func TestCollectLeafFieldPathsNested(t *testing.T) {
+func TestCollectLeafFieldsNested(t *testing.T) {
 	root := objectSchema(map[string]apiextensionsv1.JSONSchemaProps{
 		"metadata": objectSchema(map[string]apiextensionsv1.JSONSchemaProps{
-			"name": {Type: "string"},
+			"name":              {Type: "string"},
+			"creationTimestamp": {Type: "string", Format: "date-time"},
 		}),
 		"spec": objectSchema(map[string]apiextensionsv1.JSONSchemaProps{
 			"description": {Type: "string"},
 			"count":       {Type: "integer"},
+			"ratio":       {Type: "number"},
+			"enabled":     {Type: "boolean"},
+			"port":        {XIntOrString: true, AnyOf: []apiextensionsv1.JSONSchemaProps{{Type: "integer"}, {Type: "string"}}},
+			"tags": {
+				Type:  "array",
+				Items: &apiextensionsv1.JSONSchemaPropsOrArray{Schema: &apiextensionsv1.JSONSchemaProps{Type: "string"}},
+			},
 		}),
 		"status": objectSchema(map[string]apiextensionsv1.JSONSchemaProps{
 			// array node: emitted as a single leaf, NOT descended into
@@ -58,38 +76,42 @@ func TestCollectLeafFieldPathsNested(t *testing.T) {
 		}),
 	})
 
-	got := collectLeafFieldPaths(&root)
-	sort.Strings(got)
+	got := collectLeafFields(&root)
 
-	want := []string{
-		"metadata.name",
-		"spec.count",
-		"spec.description",
-		"status.conditions",
-		"status.labels",
+	want := map[string]pmsearchv1alpha1.FieldType{
+		"metadata.creationTimestamp": pmsearchv1alpha1.FieldTypeDate,
+		"metadata.name":              pmsearchv1alpha1.FieldTypeString,
+		"spec.count":                 pmsearchv1alpha1.FieldTypeInteger,
+		"spec.description":           pmsearchv1alpha1.FieldTypeString,
+		"spec.enabled":               pmsearchv1alpha1.FieldTypeBoolean,
+		"spec.port":                  pmsearchv1alpha1.FieldTypeString,
+		"spec.ratio":                 pmsearchv1alpha1.FieldTypeNumber,
+		"spec.tags":                  pmsearchv1alpha1.FieldTypeString,
+		"status.conditions":          "",
+		"status.labels":              "",
 	}
-	if len(got) != len(want) {
-		t.Fatalf("collectLeafFieldPaths() = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("collectLeafFieldPaths()[%d] = %q, want %q (full %v)", i, got[i], want[i], got)
-		}
+	if !maps.Equal(got, want) {
+		t.Fatalf("collectLeafFields() = %v, want %v", got, want)
 	}
 }
 
-func TestCollectLeafFieldPathsDepthGuard(t *testing.T) {
+func TestCollectLeafFieldsDepthGuard(t *testing.T) {
 	// Build a chain deeper than maxSchemaWalkDepth; the walk must terminate and emit the
-	// node reached at the depth limit as a leaf rather than recursing forever.
+	// node reached at the depth limit as an untyped leaf rather than recursing forever.
 	leaf := apiextensionsv1.JSONSchemaProps{Type: "string"}
 	node := objectSchema(map[string]apiextensionsv1.JSONSchemaProps{"end": leaf})
 	for range maxSchemaWalkDepth + 5 {
 		node = objectSchema(map[string]apiextensionsv1.JSONSchemaProps{"child": node})
 	}
 
-	got := collectLeafFieldPaths(&node)
+	got := collectLeafFields(&node)
 	if len(got) != 1 {
-		t.Fatalf("collectLeafFieldPaths() returned %d paths, want 1: %v", len(got), got)
+		t.Fatalf("collectLeafFields() returned %d paths, want 1: %v", len(got), got)
+	}
+	for path, fieldType := range got {
+		if fieldType != "" {
+			t.Fatalf("truncated object %q typed as %q, want untyped", path, fieldType)
+		}
 	}
 }
 
@@ -156,5 +178,50 @@ func TestSortIntoAnyOfArgOrderRegression(t *testing.T) {
 	}
 	if semantics.Has("b") {
 		t.Fatal("exact field b wrongly landed in semantics")
+	}
+}
+
+func TestResolveFieldsForSchemaTypesDefaultFields(t *testing.T) {
+	version := func(name string, specProps map[string]apiextensionsv1.JSONSchemaProps) kcpapisv1alpha1.APIResourceVersion {
+		raw, err := json.Marshal(objectSchema(map[string]apiextensionsv1.JSONSchemaProps{"spec": objectSchema(specProps)}))
+		if err != nil {
+			t.Fatalf("marshal schema: %v", err)
+		}
+		return kcpapisv1alpha1.APIResourceVersion{Name: name, Served: true, Schema: runtime.RawExtension{Raw: raw}}
+	}
+	rs := &kcpapisv1alpha1.APIResourceSchema{
+		ObjectMeta: metav1.ObjectMeta{Name: "v1.components.example.io"},
+		Spec: kcpapisv1alpha1.APIResourceSchemaSpec{Versions: []kcpapisv1alpha1.APIResourceVersion{
+			version("v1", map[string]apiextensionsv1.JSONSchemaProps{
+				"stars":   {Type: "integer"},
+				"title":   {Type: "string"},
+				"changed": {Type: "string"},
+				"extra":   {Type: "object", AdditionalProperties: &apiextensionsv1.JSONSchemaPropsOrBool{Allows: true}},
+			}),
+			version("v2", map[string]apiextensionsv1.JSONSchemaProps{
+				"stars":   {Type: "integer"},
+				"title":   {Type: "string"},
+				"changed": {Type: "integer"},
+			}),
+		}},
+	}
+
+	// Without a registered SearchConfig every schema field is a default field.
+	pc := fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+	fields, err := (&apiBindingWatcherSubroutine{}).resolveFieldsForSchema(context.Background(), pc, rs)
+	if err != nil {
+		t.Fatalf("resolveFieldsForSchema() returned error: %v", err)
+	}
+
+	if want := []string{"spec.changed", "spec.extra", "spec.stars", "spec.title"}; !slices.Equal(fields.defaultFields, want) {
+		t.Fatalf("defaultFields = %v, want %v", fields.defaultFields, want)
+	}
+	// Versions disagreeing on spec.changed leave it untyped, like the map spec.extra.
+	want := map[string]pmsearchv1alpha1.FieldType{
+		"spec.stars": pmsearchv1alpha1.FieldTypeInteger,
+		"spec.title": pmsearchv1alpha1.FieldTypeString,
+	}
+	if !maps.Equal(fields.defaultFieldTypes, want) {
+		t.Fatalf("defaultFieldTypes = %v, want %v", fields.defaultFieldTypes, want)
 	}
 }

@@ -51,10 +51,29 @@ type SearchIndexSpec struct {
 	// +optional
 	DefaultFields []string `json:"defaultFields,omitempty"`
 
+	// DefaultFieldTypes maps DefaultFields paths to the scalar type declared in
+	// the APIResourceSchema. Typed fields get an explicit, sortable index mapping;
+	// paths without a scalar type (objects, maps, arrays of objects) are indexed
+	// as text.
+	// +optional
+	DefaultFieldTypes map[string]FieldType `json:"defaultFieldTypes,omitempty"`
+
 	// Paused stops all indexing when true
 	// +optional
 	Paused bool `json:"paused,omitempty"`
 }
+
+// FieldType is the scalar type of an indexed field.
+// +kubebuilder:validation:Enum=string;integer;number;boolean;date
+type FieldType string
+
+const (
+	FieldTypeString  FieldType = "string"
+	FieldTypeInteger FieldType = "integer"
+	FieldTypeNumber  FieldType = "number"
+	FieldTypeBoolean FieldType = "boolean"
+	FieldTypeDate    FieldType = "date"
+)
 
 // SearchIndexStatus defines the observed state of SearchIndex.
 type SearchIndexStatus struct {

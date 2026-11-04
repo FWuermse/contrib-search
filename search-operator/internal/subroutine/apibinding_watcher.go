@@ -19,6 +19,7 @@ package subroutine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -178,9 +179,10 @@ func (s *apiBindingWatcherSubroutine) Finalize(_ context.Context, _ runtimeobjec
 
 // searchIndexFields holds the resolved field lists for a SearchIndex.
 type searchIndexFields struct {
-	defaultFields    []string
-	semanticFields   []string
-	filterableFields []string
+	defaultFields     []string
+	defaultFieldTypes map[string]pmsearchv1alpha1.FieldType
+	semanticFields    []string
+	filterableFields  []string
 }
 
 // resolveFieldsForPermissionClaim finds the APIResourceSchema for the claimed (group, resource)
@@ -192,6 +194,7 @@ func (s *apiBindingWatcherSubroutine) resolveFieldsForSchema(ctx context.Context
 	defaultFields := sets.New[string]()
 	semanticFields := sets.New[string]()
 	exactFields := sets.New[string]()
+	fieldTypes := map[string]pmsearchv1alpha1.FieldType{}
 
 	var cf *searchConfigFilter
 	searchCfg := &pmsearchv1alpha1.SearchConfig{}
@@ -214,7 +217,13 @@ func (s *apiBindingWatcherSubroutine) resolveFieldsForSchema(ctx context.Context
 		if props == nil {
 			continue
 		}
-		for _, fieldPath := range collectLeafFieldPaths(props) {
+		for fieldPath, fieldType := range collectLeafFields(props) {
+			// Served versions that disagree on a type leave the path untyped.
+			if existing, seen := fieldTypes[fieldPath]; seen && existing != fieldType {
+				fieldType = ""
+			}
+			fieldTypes[fieldPath] = fieldType
+
 			if cf == nil {
 				defaultFields.Insert(fieldPath)
 			} else {
@@ -226,10 +235,21 @@ func (s *apiBindingWatcherSubroutine) resolveFieldsForSchema(ctx context.Context
 	// default filters that can always be extracted for each Resource
 	exactFields.Insert(opensearch.DefaultFilterableFields...)
 
+	var defaultFieldTypes map[string]pmsearchv1alpha1.FieldType
+	for fieldPath := range defaultFields {
+		if fieldType := fieldTypes[fieldPath]; fieldType != "" {
+			if defaultFieldTypes == nil {
+				defaultFieldTypes = map[string]pmsearchv1alpha1.FieldType{}
+			}
+			defaultFieldTypes[fieldPath] = fieldType
+		}
+	}
+
 	return &searchIndexFields{
-		defaultFields:    sets.List(defaultFields),
-		semanticFields:   sets.List(semanticFields),
-		filterableFields: sets.List(exactFields),
+		defaultFields:     sets.List(defaultFields),
+		defaultFieldTypes: defaultFieldTypes,
+		semanticFields:    sets.List(semanticFields),
+		filterableFields:  sets.List(exactFields),
 	}, nil
 }
 
@@ -254,13 +274,13 @@ func boundSchemasForBinding(ctx context.Context, providerClient ctrlruntimeclien
 // maxSchemaWalkDepth bounds recursion into pathological / deeply nested schemas.
 const maxSchemaWalkDepth = 10
 
-// collectLeafFieldPaths walks the schema's Properties recursively and returns a dot-notation
-// path for every leaf field. A leaf is any node with no child Properties, which includes
-// scalars, arrays, and map-typed (additionalProperties) nodes. Arrays and maps are emitted as
-// a single leaf path (they are not descended into), so the paths stay resolvable by the
-// map-only lookupFieldPath used during indexing.
-func collectLeafFieldPaths(root *apiextensionsv1.JSONSchemaProps) []string {
-	var out []string
+// collectLeafFields walks the schema's Properties recursively and returns the scalar type of
+// every leaf field, keyed by its dot-notation path. A leaf is any node with no child Properties,
+// which includes scalars, arrays, and map-typed (additionalProperties) nodes. Arrays and maps are
+// emitted as a single leaf path (they are not descended into), so the paths stay resolvable by
+// the map-only lookupFieldPath used during indexing. Leaves without a scalar type map to "".
+func collectLeafFields(root *apiextensionsv1.JSONSchemaProps) map[string]pmsearchv1alpha1.FieldType {
+	out := map[string]pmsearchv1alpha1.FieldType{}
 	var walk func(prefix string, node *apiextensionsv1.JSONSchemaProps, depth int)
 	walk = func(prefix string, node *apiextensionsv1.JSONSchemaProps, depth int) {
 		if node == nil {
@@ -268,7 +288,7 @@ func collectLeafFieldPaths(root *apiextensionsv1.JSONSchemaProps) []string {
 		}
 		if depth > maxSchemaWalkDepth || len(node.Properties) == 0 {
 			if prefix != "" {
-				out = append(out, prefix)
+				out[prefix] = leafFieldType(node)
 			}
 			return
 		}
@@ -283,6 +303,38 @@ func collectLeafFieldPaths(root *apiextensionsv1.JSONSchemaProps) []string {
 	}
 	walk("", root, 0)
 	return out
+}
+
+// leafFieldType maps a leaf schema to its scalar type. Arrays take the type of their items,
+// since OpenSearch indexes every field as multi-valued. int-or-string is a string: a text
+// field accepts both, a numeric one rejects the string form.
+func leafFieldType(node *apiextensionsv1.JSONSchemaProps) pmsearchv1alpha1.FieldType {
+	if node.XIntOrString {
+		return pmsearchv1alpha1.FieldTypeString
+	}
+	if len(node.Properties) > 0 {
+		return ""
+	}
+
+	switch node.Type {
+	case "string":
+		if node.Format == "date-time" || node.Format == "date" {
+			return pmsearchv1alpha1.FieldTypeDate
+		}
+		return pmsearchv1alpha1.FieldTypeString
+	case "integer":
+		return pmsearchv1alpha1.FieldTypeInteger
+	case "number":
+		return pmsearchv1alpha1.FieldTypeNumber
+	case "boolean":
+		return pmsearchv1alpha1.FieldTypeBoolean
+	case "array":
+		if node.Items != nil && node.Items.Schema != nil && node.Items.Schema.Type != "array" {
+			return leafFieldType(node.Items.Schema)
+		}
+	}
+
+	return ""
 }
 
 // searchConfigFilter holds pre-built sets from a SearchConfig for fast field classification.
@@ -348,6 +400,7 @@ func (s *apiBindingWatcherSubroutine) ensureSearchIndex(
 				NumberOfShards:        1,
 				NumberOfReplicas:      1,
 				DefaultFields:         fields.defaultFields,
+				DefaultFieldTypes:     fields.defaultFieldTypes,
 				SemanticFields:        fields.semanticFields,
 				FilterableFields:      fields.filterableFields,
 			},
@@ -368,12 +421,14 @@ func (s *apiBindingWatcherSubroutine) ensureSearchIndex(
 
 	default:
 		if slices.Equal(existing.Spec.DefaultFields, fields.defaultFields) &&
+			maps.Equal(existing.Spec.DefaultFieldTypes, fields.defaultFieldTypes) &&
 			slices.Equal(existing.Spec.SemanticFields, fields.semanticFields) &&
 			slices.Equal(existing.Spec.FilterableFields, fields.filterableFields) {
 			return nil
 		}
 		updated := existing.DeepCopy()
 		updated.Spec.DefaultFields = fields.defaultFields
+		updated.Spec.DefaultFieldTypes = fields.defaultFieldTypes
 		updated.Spec.SemanticFields = fields.semanticFields
 		updated.Spec.FilterableFields = fields.filterableFields
 		if updateErr := orgsClient.Update(ctx, updated); updateErr != nil {
